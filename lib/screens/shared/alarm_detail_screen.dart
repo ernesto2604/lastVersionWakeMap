@@ -3,6 +3,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../models/alarm_model.dart';
 import '../../providers/app_state_provider.dart';
+import '../../widgets/map/map_wrapper.dart';
 
 class AlarmDetailScreen extends StatefulWidget {
   final AlarmModel alarm;
@@ -68,7 +69,9 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
       ),
     );
     if (confirm == true) {
-      await context.read<AppStateProvider>().deleteAlarm(widget.alarm.id);
+      if (!mounted) return;
+      final appState = context.read<AppStateProvider>();
+      await appState.deleteAlarm(widget.alarm.id);
       if (mounted) Navigator.of(context).pop();
     }
   }
@@ -113,7 +116,9 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
           Card(
             child: SwitchListTile(
               title: const Text('Active'),
-              subtitle: Text(_isActive ? 'Alarm is active' : 'Alarm is inactive'),
+              subtitle: Text(
+                _isActive ? 'Alarm is active' : 'Alarm is inactive',
+              ),
               value: _isActive,
               onChanged: (val) {
                 setState(() => _isActive = val);
@@ -126,7 +131,10 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
           // Coordinates
           Card(
             child: ListTile(
-              leading: Icon(Icons.location_on, color: theme.colorScheme.primary),
+              leading: Icon(
+                Icons.location_on,
+                color: theme.colorScheme.primary,
+              ),
               title: const Text('Coordinates'),
               subtitle: Text(
                 '${widget.alarm.latitude.toStringAsFixed(5)}, ${widget.alarm.longitude.toStringAsFixed(5)}',
@@ -188,18 +196,19 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
                   zoom: 15,
                 ),
                 markers: {
-                  Marker(
-                    markerId: const MarkerId('alarm'),
-                    position: alarmPos,
-                  ),
+                  Marker(markerId: const MarkerId('alarm'), position: alarmPos),
                 },
                 circles: {
                   Circle(
                     circleId: const CircleId('radius'),
                     center: alarmPos,
                     radius: _radius,
-                    fillColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-                    strokeColor: theme.colorScheme.primary.withValues(alpha: 0.5),
+                    fillColor: theme.colorScheme.primary.withValues(
+                      alpha: 0.15,
+                    ),
+                    strokeColor: theme.colorScheme.primary.withValues(
+                      alpha: 0.5,
+                    ),
                     strokeWidth: 2,
                   ),
                 },
@@ -208,7 +217,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
                 rotateGesturesEnabled: false,
                 tiltGesturesEnabled: false,
                 myLocationButtonEnabled: false,
-                liteModeEnabled: true,
+                liteModeEnabled: MapWrapper.liteModeEnabled,
               ),
             ),
           ),

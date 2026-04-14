@@ -16,17 +16,46 @@ class LocationService {
   /// Check and request location permissions.
   /// Returns a detailed status enum instead of a plain bool.
   Future<LocationPermissionStatus> checkAndRequestPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled = false;
+    try {
+      serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    } catch (e) {
+      debugPrint('$_tag Could not determine service state: $e');
+    }
+
     if (!serviceEnabled) {
+      // Some browsers can still resolve geolocation even when service
+      // status APIs are limited. Probe once before returning disabled.
+      if (kIsWeb && await _probeWebGeolocationAccess()) {
+        return LocationPermissionStatus.granted;
+      }
       debugPrint('$_tag Location services are DISABLED');
       return LocationPermissionStatus.serviceDisabled;
     }
 
-    LocationPermission permission = await Geolocator.checkPermission();
+    LocationPermission permission;
+    try {
+      permission = await Geolocator.checkPermission();
+    } catch (e) {
+      debugPrint('$_tag Error checking permission: $e');
+      if (kIsWeb && await _probeWebGeolocationAccess()) {
+        return LocationPermissionStatus.granted;
+      }
+      return LocationPermissionStatus.denied;
+    }
+
     if (permission == LocationPermission.denied) {
       debugPrint('$_tag Permission denied, requesting...');
-      permission = await Geolocator.requestPermission();
+      try {
+        permission = await Geolocator.requestPermission();
+      } catch (e) {
+        debugPrint('$_tag Error requesting permission: $e');
+      }
+
       if (permission == LocationPermission.denied) {
+        if (kIsWeb && await _probeWebGeolocationAccess()) {
+          return LocationPermissionStatus.granted;
+        }
         debugPrint('$_tag Permission denied by user');
         return LocationPermissionStatus.denied;
       }
@@ -38,6 +67,23 @@ class LocationService {
 
     debugPrint('$_tag Permission granted ($permission)');
     return LocationPermissionStatus.granted;
+  }
+
+  Future<bool> _probeWebGeolocationAccess() async {
+    if (!kIsWeb) return false;
+    try {
+      await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      debugPrint('$_tag Web geolocation probe succeeded');
+      return true;
+    } catch (e) {
+      debugPrint('$_tag Web geolocation probe failed: $e');
+      return false;
+    }
   }
 
   /// Convenience: returns true only if granted.
@@ -65,7 +111,9 @@ class LocationService {
           accuracy: LocationAccuracy.high,
         ),
       );
-      debugPrint('$_tag Current position: ${position.latitude}, ${position.longitude}');
+      debugPrint(
+        '$_tag Current position: ${position.latitude}, ${position.longitude}',
+      );
       return position;
     } catch (e) {
       debugPrint('$_tag Error getting current position: $e');
@@ -83,7 +131,9 @@ class LocationService {
   /// fully backgrounded by the OS. True background geofencing would
   /// require a platform-specific solution (e.g. WorkManager + native geofence API).
   Stream<Position> getAlarmMonitoringStream() {
-    debugPrint('$_tag Starting alarm monitoring stream (medium accuracy, 50m filter)');
+    debugPrint(
+      '$_tag Starting alarm monitoring stream (medium accuracy, 50m filter)',
+    );
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.medium,

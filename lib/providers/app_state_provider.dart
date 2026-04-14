@@ -176,11 +176,15 @@ class AppStateProvider extends ChangeNotifier {
     required double radiusMeters,
   }) async {
     await _alarmService.createAlarm(
-      name: name, latitude: latitude, longitude: longitude,
+      name: name,
+      latitude: latitude,
+      longitude: longitude,
       radiusMeters: radiusMeters,
     );
     _alarms = _alarmService.loadAlarms();
-    debugPrint('$_tag Alarm created: "$name". Active count: $_activeAlarmCount');
+    debugPrint(
+      '$_tag Alarm created: "$name". Active count: $_activeAlarmCount',
+    );
     notifyListeners();
     _restartTrackingIfNeeded();
   }
@@ -188,7 +192,9 @@ class AppStateProvider extends ChangeNotifier {
   Future<void> updateAlarm(AlarmModel alarm) async {
     await _alarmService.updateAlarm(alarm);
     _alarms = _alarmService.loadAlarms();
-    debugPrint('$_tag Alarm updated: "${alarm.name}". Active count: $_activeAlarmCount');
+    debugPrint(
+      '$_tag Alarm updated: "${alarm.name}". Active count: $_activeAlarmCount',
+    );
     notifyListeners();
     _restartTrackingIfNeeded();
   }
@@ -204,7 +210,8 @@ class AppStateProvider extends ChangeNotifier {
   Future<void> toggleAlarm(String id) async {
     // Debounce: ignore taps within 300ms of the last accepted toggle
     final now = DateTime.now();
-    if (_lastToggleTime != null && now.difference(_lastToggleTime!) < _toggleDebounce) {
+    if (_lastToggleTime != null &&
+        now.difference(_lastToggleTime!) < _toggleDebounce) {
       debugPrint('$_tag Toggle debounced (too fast)');
       return;
     }
@@ -219,7 +226,9 @@ class AppStateProvider extends ChangeNotifier {
       await _alarmService.toggleAlarm(id);
       _alarms = _alarmService.loadAlarms();
       final alarm = _alarms.where((a) => a.id == id).firstOrNull;
-      debugPrint('$_tag Alarm toggled: "${alarm?.name}" isActive=${alarm?.isActive}. Active count: $_activeAlarmCount');
+      debugPrint(
+        '$_tag Alarm toggled: "${alarm?.name}" isActive=${alarm?.isActive}. Active count: $_activeAlarmCount',
+      );
       notifyListeners();
       _restartTrackingIfNeeded();
     } finally {
@@ -262,7 +271,9 @@ class AppStateProvider extends ChangeNotifier {
       if (!_permissionGranted) {
         _permissionStatus = await _location.checkAndRequestPermission();
         if (_permissionStatus != LocationPermissionStatus.granted) {
-          debugPrint('$_tag Cannot start tracking: permission=$_permissionStatus');
+          debugPrint(
+            '$_tag Cannot start tracking: permission=$_permissionStatus',
+          );
           notifyListeners();
           return; // finally block resets _isStartingTracking
         }
@@ -274,7 +285,9 @@ class AppStateProvider extends ChangeNotifier {
         _currentPosition = await _location.getPositionUnchecked();
         _hasFetchedInitialPosition = true;
         if (_currentPosition != null) {
-          debugPrint('$_tag Initial position: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}');
+          debugPrint(
+            '$_tag Initial position: ${_currentPosition!.latitude}, ${_currentPosition!.longitude}',
+          );
           _checkAlarmsAgainstPosition(_currentPosition!);
         }
         notifyListeners();
@@ -335,12 +348,16 @@ class AppStateProvider extends ChangeNotifier {
     if (_isAlarmScreenShowing || _isNavigatingToTrigger) return;
 
     final triggered = _alarmService.checkAlarms(
-      position.latitude, position.longitude, _alarms,
+      position.latitude,
+      position.longitude,
+      _alarms,
     );
 
     if (triggered != null) {
-      debugPrint('$_tag 🔔 ALARM TRIGGERED: "${triggered.name}" '
-          '(radius=${triggered.radiusMeters}m)');
+      debugPrint(
+        '$_tag 🔔 ALARM TRIGGERED: "${triggered.name}" '
+        '(radius=${triggered.radiusMeters}m)',
+      );
       _triggerAlarm(triggered);
     }
   }
@@ -357,7 +374,9 @@ class AppStateProvider extends ChangeNotifier {
     await _alarmService.markTriggered(alarm.id);
     _alarms = _alarmService.loadAlarms();
 
-    debugPrint('$_tag Alarm "${alarm.name}" marked as triggered. Active count: $_activeAlarmCount');
+    debugPrint(
+      '$_tag Alarm "${alarm.name}" marked as triggered. Active count: $_activeAlarmCount',
+    );
 
     if (_activeAlarmCount == 0) {
       stopLocationTracking();
@@ -383,12 +402,16 @@ class AppStateProvider extends ChangeNotifier {
     _isAlarmScreenShowing = false;
     _isNavigatingToTrigger = false;
 
-    if (_mode == AppMode.traveller && _arrivalLat != null && _arrivalLng != null) {
+    if (_mode == AppMode.traveller &&
+        _arrivalLat != null &&
+        _arrivalLng != null) {
       // Dedup: only generate guide if not already initialized
       if (_currentPlan == null && !_isGuideInitializing) {
         unawaited(_initializeTravellerGuidePlan());
       } else {
-        debugPrint('$_tag Traveller: guide already initialized, skipping duplicate');
+        debugPrint(
+          '$_tag Traveller: guide already initialized, skipping duplicate',
+        );
       }
       _travellerTabIndex = 1;
       debugPrint('$_tag Traveller: switching to Guide tab');
@@ -435,7 +458,9 @@ class AppStateProvider extends ChangeNotifier {
     );
 
     if (!_geminiGuideService.isConfigured) {
-      debugPrint('$_geminiTag Missing API key, using mock fallback');
+      debugPrint(
+        '$_geminiTag Guide backend not configured, using mock fallback',
+      );
       return fallbackPlan;
     }
 
@@ -464,7 +489,9 @@ class AppStateProvider extends ChangeNotifier {
     );
 
     if (!_geminiGuideService.isConfigured) {
-      debugPrint('$_guideTag Falling back to mock conversational response because API key missing');
+      debugPrint(
+        '$_guideTag Falling back to mock conversational response because guide backend is not configured',
+      );
       return fallbackText;
     }
 
@@ -480,12 +507,16 @@ class AppStateProvider extends ChangeNotifier {
       debugPrint('$_guideTag Gemini chat response received');
       return response;
     } catch (e) {
-      debugPrint('$_guideTag Falling back to mock conversational response because $e');
+      debugPrint(
+        '$_guideTag Falling back to mock conversational response because $e',
+      );
       return fallbackText;
     }
   }
 
-  Future<MockPlanModel> _generatePlanFromConversationWithFallback(String text) async {
+  Future<MockPlanModel> _generatePlanFromConversationWithFallback(
+    String text,
+  ) async {
     final fallbackPlan = _guideService.generatePlanFromConversation(
       lat: _arrivalLat ?? _currentPosition?.latitude ?? 0,
       lng: _arrivalLng ?? _currentPosition?.longitude ?? 0,
@@ -496,7 +527,9 @@ class AppStateProvider extends ChangeNotifier {
     );
 
     if (!_geminiGuideService.isConfigured) {
-      debugPrint('$_guideTag Falling back to mock plan because API key missing');
+      debugPrint(
+        '$_guideTag Falling back to mock plan because guide backend is not configured',
+      );
       return fallbackPlan;
     }
 
@@ -517,7 +550,7 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   Future<({String response, MockPlanModel updatedPlan})>
-      _refinePlanWithGeminiOrFallback(String text) async {
+  _refinePlanWithGeminiOrFallback(String text) async {
     final fallback = _guideService.refinePlanFallback(
       userMessage: text,
       currentPlan: _currentPlan!,
@@ -526,7 +559,9 @@ class AppStateProvider extends ChangeNotifier {
     );
 
     if (!_geminiGuideService.isConfigured) {
-      debugPrint('$_guideTag Falling back to mock plan because API key missing');
+      debugPrint(
+        '$_guideTag Falling back to mock plan because guide backend is not configured',
+      );
       return fallback;
     }
 
@@ -617,19 +652,25 @@ class AppStateProvider extends ChangeNotifier {
 
     final lower = normalized.toLowerCase();
 
-    final inMatch = RegExp(r'\bin\s+([a-zA-Z][a-zA-Z\s]{1,28})').firstMatch(normalized);
+    final inMatch = RegExp(
+      r'\bin\s+([a-zA-Z][a-zA-Z\s]{1,28})',
+    ).firstMatch(normalized);
     if (inMatch != null) {
       destination = inMatch.group(1)?.trim();
     }
 
-    final forMatch = RegExp(r'\bfor\s+([0-9]+\s*(day|days|hour|hours|weekend))', caseSensitive: false)
-        .firstMatch(normalized);
+    final forMatch = RegExp(
+      r'\bfor\s+([0-9]+\s*(day|days|hour|hours|weekend))',
+      caseSensitive: false,
+    ).firstMatch(normalized);
     if (forMatch != null) {
       duration = forMatch.group(1)?.trim();
     }
 
-    final budgetMatch = RegExp(r'(£\s?[0-9]+(?:\s?[-–]\s?£?\s?[0-9]+)?\s*(a day|per day)?)', caseSensitive: false)
-        .firstMatch(normalized);
+    final budgetMatch = RegExp(
+      r'(£\s?[0-9]+(?:\s?[-–]\s?£?\s?[0-9]+)?\s*(a day|per day)?)',
+      caseSensitive: false,
+    ).firstMatch(normalized);
     if (budgetMatch != null) {
       budget = budgetMatch.group(1)?.replaceAll('  ', ' ').trim();
     }
@@ -637,7 +678,9 @@ class AppStateProvider extends ChangeNotifier {
     if (lower.contains('food')) prefs.add('food');
     if (lower.contains('museum')) prefs.add('museums');
     if (lower.contains('nightlife')) prefs.add('nightlife');
-    if (lower.contains('relaxed') || lower.contains('relax')) prefs.add('relaxed');
+    if (lower.contains('relaxed') || lower.contains('relax')) {
+      prefs.add('relaxed');
+    }
     if (lower.contains('less walking')) prefs.add('less walking');
 
     _guideSession = _guideSession.copyWith(
@@ -649,7 +692,9 @@ class AppStateProvider extends ChangeNotifier {
   }
 
   void _updateGuideSessionFromAssistantMessage(String text) {
-    _guideSession = _guideSession.copyWith(lastConversationSummary: text.trim());
+    _guideSession = _guideSession.copyWith(
+      lastConversationSummary: text.trim(),
+    );
   }
 
   Map<String, dynamic> _buildGuideRequestContext({
@@ -686,7 +731,8 @@ class AppStateProvider extends ChangeNotifier {
       map['preferences'] = _guideSession.conversationPreferences;
     }
     if (_guideSession.lastConversationSummary?.trim().isNotEmpty == true) {
-      map['last_conversation_summary'] = _guideSession.lastConversationSummary!.trim();
+      map['last_conversation_summary'] = _guideSession.lastConversationSummary!
+          .trim();
     }
 
     if (_currentPosition != null) {
@@ -750,7 +796,10 @@ class AppStateProvider extends ChangeNotifier {
       case GuideIntent.chatOnly:
         final response = await _chatOnlyWithGeminiOrFallback(text);
         _updateGuideSessionFromAssistantMessage(response);
-        _chatMessages = [..._chatMessages, _guideService.createAssistantMessage(response)];
+        _chatMessages = [
+          ..._chatMessages,
+          _guideService.createAssistantMessage(response),
+        ];
         break;
 
       case GuideIntent.planGeneration:
@@ -773,7 +822,10 @@ class AppStateProvider extends ChangeNotifier {
         if (_currentPlan == null) {
           final response = await _chatOnlyWithGeminiOrFallback(text);
           _updateGuideSessionFromAssistantMessage(response);
-          _chatMessages = [..._chatMessages, _guideService.createAssistantMessage(response)];
+          _chatMessages = [
+            ..._chatMessages,
+            _guideService.createAssistantMessage(response),
+          ];
           break;
         }
 

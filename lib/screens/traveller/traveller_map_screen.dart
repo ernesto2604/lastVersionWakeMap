@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/location_service.dart';
 import '../../app/routes.dart';
+import '../../widgets/map/map_wrapper.dart';
 
 class TravellerMapScreen extends StatefulWidget {
   const TravellerMapScreen({super.key});
@@ -60,7 +61,6 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   @override
   void dispose() {
     _mapFollowSub?.cancel();
-    _mapController?.dispose();
     super.dispose();
   }
 
@@ -78,8 +78,8 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     }
 
     try {
-      final permission =
-          await _appState.locationService.checkAndRequestPermission();
+      final permission = await _appState.locationService
+          .checkAndRequestPermission();
 
       if (permission == LocationPermissionStatus.granted) {
         final position = await _appState.locationService.getPositionUnchecked();
@@ -138,9 +138,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
     _mapFollowSub = _appState.locationService.getMapFollowStream().listen(
       (position) {
-        _handleLocationUpdate(
-          LatLng(position.latitude, position.longitude),
-        );
+        _handleLocationUpdate(LatLng(position.latitude, position.longitude));
       },
       onError: (error) {
         debugPrint('$_tag Map follow stream error: $error');
@@ -227,7 +225,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
             title: alarm.name,
             snippet: '${alarm.radiusMeters.round()} m radius',
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          icon: MapWrapper.markerWithHue(BitmapDescriptor.hueAzure),
         ),
       );
     }
@@ -245,7 +243,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
               title: '${i + 1}. ${stop.name}',
               snippet: stop.description,
             ),
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+            icon: MapWrapper.markerWithHue(BitmapDescriptor.hueOrange),
           ),
         );
       }
@@ -297,11 +295,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     final theme = Theme.of(context);
 
     if (_isLoadingInitialPosition) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Consumer<AppStateProvider>(
@@ -311,19 +305,24 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
         return Scaffold(
           body: Stack(
             children: [
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: initialTarget,
-                  zoom: 14,
+              Positioned.fill(
+                child: MapWrapper.withLayoutDiagnostics(
+                  tag: 'traveller_main_map',
+                  child: GoogleMap(
+                    initialCameraPosition: CameraPosition(
+                      target: initialTarget,
+                      zoom: 14,
+                    ),
+                    onMapCreated: _onMapCreated,
+                    onCameraMoveStarted: _onCameraMoveStarted,
+                    markers: _buildMarkers(appState),
+                    circles: _buildCircles(appState),
+                    polylines: _buildPolylines(appState),
+                    myLocationEnabled: true,
+                    myLocationButtonEnabled: true,
+                    zoomControlsEnabled: false,
+                  ),
                 ),
-                onMapCreated: _onMapCreated,
-                onCameraMoveStarted: _onCameraMoveStarted,
-                markers: _buildMarkers(appState),
-                circles: _buildCircles(appState),
-                polylines: _buildPolylines(appState),
-                myLocationEnabled: true,
-                myLocationButtonEnabled: true,
-                zoomControlsEnabled: false,
               ),
 
               if (_usedFallbackInitialPosition)
@@ -349,14 +348,18 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
               Positioned(
                 top: MediaQuery.of(context).padding.top + 8,
                 left: 12,
-                child: CircleAvatar(
-                  backgroundColor: theme.colorScheme.surface,
-                  child: IconButton(
-                    icon: Icon(Icons.settings_outlined,
-                        color: theme.colorScheme.onSurface),
-                    onPressed: () =>
-                        Navigator.of(context).pushNamed(AppRoutes.settings),
-                    tooltip: 'Settings',
+                child: MapWrapper.overlay(
+                  CircleAvatar(
+                    backgroundColor: theme.colorScheme.surface,
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.settings_outlined,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed(AppRoutes.settings),
+                      tooltip: 'Settings',
+                    ),
                   ),
                 ),
               ),
@@ -366,30 +369,32 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 8,
                   right: 12,
-                  child: Card(
-                    color: theme.colorScheme.secondaryContainer,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.auto_awesome,
-                            size: 16,
-                            color: theme.colorScheme.onSecondaryContainer,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${appState.currentPlan!.stops.length} stops',
-                            style: theme.textTheme.labelMedium?.copyWith(
+                  child: MapWrapper.overlay(
+                    Card(
+                      color: theme.colorScheme.secondaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome,
+                              size: 16,
                               color: theme.colorScheme.onSecondaryContainer,
-                              fontWeight: FontWeight.w600,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(
+                              '${appState.currentPlan!.stops.length} stops',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                color: theme.colorScheme.onSecondaryContainer,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -399,17 +404,22 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
               Positioned(
                 bottom: 24,
                 right: 16,
-                child: FloatingActionButton(
-                  heroTag: 'mic_traveller',
-                  onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Voice input coming soon!')),
-                    );
-                  },
-                  backgroundColor: theme.colorScheme.secondaryContainer,
-                  child: Icon(Icons.mic,
-                      color: theme.colorScheme.onSecondaryContainer),
+                child: MapWrapper.overlay(
+                  FloatingActionButton(
+                    heroTag: 'mic_traveller',
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Voice input coming soon!'),
+                        ),
+                      );
+                    },
+                    backgroundColor: theme.colorScheme.secondaryContainer,
+                    child: Icon(
+                      Icons.mic,
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
                 ),
               ),
 
@@ -417,11 +427,13 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                 Positioned(
                   bottom: 96,
                   right: 16,
-                  child: FloatingActionButton.small(
-                    heroTag: 'recenter_traveller',
-                    onPressed: _onRecenterPressed,
-                    tooltip: 'Recenter',
-                    child: const Icon(Icons.my_location),
+                  child: MapWrapper.overlay(
+                    FloatingActionButton.small(
+                      heroTag: 'recenter_traveller',
+                      onPressed: _onRecenterPressed,
+                      tooltip: 'Recenter',
+                      child: const Icon(Icons.my_location),
+                    ),
                   ),
                 ),
             ],

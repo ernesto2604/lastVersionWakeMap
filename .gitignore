@@ -33,8 +33,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
-# Local app secrets (keep private)
-lib/config/app_secrets.dart
+# Backend local secrets
+backend/.env
+backend/node_modules/
 
 # Symbolication related
 app.*.symbols

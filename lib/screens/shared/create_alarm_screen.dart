@@ -59,7 +59,6 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
   @override
   void dispose() {
     _nameController.dispose();
-    _mapController?.dispose();
     super.dispose();
   }
 
