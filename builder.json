@@ -1,0 +1,16 @@
+{
+  "project": "lastVersion_WakeMap",
+  "platform": "ios",
+  "github": {
+    "owner": "ernesto2604",
+    "repo": "lastVersionWakeMap"
+  },
+  "ios": {
+    "path": "ios"
+  },
+  "flutter": {
+    "watch": {}
+  },
+  "reactNative": {},
+  "mobai": {}
+}
