@@ -38,6 +38,11 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
 
+    target.build_configurations.each do |config|
+      # Keep all pod targets aligned with Runner to avoid archive-time mismatches.
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+    end
+
     # We only request "when in use" location in WakeMap's MVP flow.
     # This avoids forcing "always" permission keys/capabilities on iOS.
     next unless target.name == 'geolocator_apple'
