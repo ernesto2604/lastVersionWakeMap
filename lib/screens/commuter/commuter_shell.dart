@@ -78,6 +78,7 @@ class _CommuterShellState extends State<CommuterShell> {
           bottomNavigationBar: PremiumBottomNavBar(
             currentIndex: tabIndex,
             onTap: (i) => _appState.setCommuterTab(i),
+            forceSolidStyle: tabIndex == 1,
             onExtraButtonTap: tabIndex == 1
                 ? () {
                     ScaffoldMessenger.of(context).showSnackBar(

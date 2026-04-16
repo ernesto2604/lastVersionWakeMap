@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_liquid_glass_plus/flutter_liquid_glass.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
@@ -10,10 +9,6 @@ import 'map_style_config.dart';
 /// Web-safe map helpers shared across screens.
 class MapWrapper {
   const MapWrapper._();
-
-  static const MethodChannel _nativeConfigChannel = MethodChannel(
-    'wake_map/native_config',
-  );
 
   /// Optional cloud map id reserved for future rollout.
   static const String _definedCloudMapId = String.fromEnvironment(
@@ -50,39 +45,6 @@ class MapWrapper {
     } catch (error) {
       // Styling should never block map usage if unsupported on a platform.
       debugPrint('[MapStyle] Unable to apply style: $error');
-    }
-  }
-
-  static Future<String> getIosMapsApiKeyStatus() async {
-    if (defaultTargetPlatform != TargetPlatform.iOS) {
-      return 'not_ios';
-    }
-
-    try {
-      final status = await _nativeConfigChannel.invokeMethod<String>(
-        'getIosMapsApiKeyStatus',
-      );
-      return status ?? 'unknown';
-    } catch (error) {
-      debugPrint('[Map] Failed to read iOS Maps API key status: $error');
-      return 'unknown';
-    }
-  }
-
-  static bool isMapsApiKeyConfigurationIssue(String status) {
-    return status == 'missing' || status == 'placeholder' || status == 'invalid';
-  }
-
-  static String mapsApiKeyErrorMessage(String status) {
-    switch (status) {
-      case 'missing':
-        return 'Map unavailable on iOS: Google Maps API key is missing.';
-      case 'placeholder':
-        return 'Map unavailable on iOS: Google Maps API key is unresolved placeholder.';
-      case 'invalid':
-        return 'Map unavailable on iOS: Google Maps API key is invalid.';
-      default:
-        return 'Map unavailable on iOS due to Google Maps configuration.';
     }
   }
 
@@ -127,10 +89,45 @@ class MapWrapper {
     required IconData icon,
     String? tooltip,
     double size = 48,
+    bool useLiquidGlass = true,
   }) {
     final iconColor = Theme.of(context).colorScheme.onSurface.withValues(
       alpha: 0.62,
     );
+
+    if (!useLiquidGlass) {
+      final theme = Theme.of(context);
+      return overlay(
+        Tooltip(
+          message: tooltip ?? '',
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surface.withValues(alpha: 0.94),
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: theme.colorScheme.outline.withValues(alpha: 0.2),
+                width: 0.8,
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1A000000),
+                  blurRadius: 14,
+                  offset: Offset(0, 6),
+                ),
+              ],
+            ),
+            child: IconButton(
+              onPressed: onPressed,
+              icon: Icon(icon, color: iconColor, size: 22),
+              splashRadius: size * 0.45,
+              tooltip: tooltip,
+            ),
+          ),
+        ),
+      );
+    }
 
     return overlay(
       Tooltip(

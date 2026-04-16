@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -57,14 +56,10 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
   /// Latest device location received from map follow stream.
   LatLng? _latestDeviceLocation;
 
-  bool _isCheckingIosMapsApiKey = true;
-  String _iosMapsApiKeyStatus = 'unknown';
-
   @override
   void initState() {
     super.initState();
     _appState = context.read<AppStateProvider>();
-    _resolveIosMapsApiKeyStatus();
     _resolveInitialMapTarget();
   }
 
@@ -131,66 +126,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
       _startMapFollowStream();
       debugPrint('$_mapTag Auto-follow enabled for commuter map');
     }
-  }
-
-  Future<void> _resolveIosMapsApiKeyStatus() async {
-    final status = await MapWrapper.getIosMapsApiKeyStatus();
-    if (!mounted) return;
-    setState(() {
-      _iosMapsApiKeyStatus = status;
-      _isCheckingIosMapsApiKey = false;
-    });
-  }
-
-  bool get _hasIosMapsApiKeyIssue {
-    if (defaultTargetPlatform != TargetPlatform.iOS) return false;
-    return MapWrapper.isMapsApiKeyConfigurationIssue(_iosMapsApiKeyStatus);
-  }
-
-  Widget _buildIosMapsApiKeyErrorScreen() {
-    final theme = Theme.of(context);
-    return Scaffold(
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: MapWrapper.frostedPill(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    CupertinoIcons.exclamationmark_triangle_fill,
-                    color: CupertinoColors.systemRed,
-                    size: 30,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Cannot open map',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    MapWrapper.mapsApiKeyErrorMessage(_iosMapsApiKeyStatus),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Status: $_iosMapsApiKeyStatus',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.error,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   void _onMapCreated(GoogleMapController controller) {
@@ -322,12 +257,8 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoadingInitialPosition || _isCheckingIosMapsApiKey) {
+    if (_isLoadingInitialPosition) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    if (_hasIosMapsApiKeyIssue) {
-      return _buildIosMapsApiKeyErrorScreen();
     }
 
     return Consumer<AppStateProvider>(
@@ -403,6 +334,7 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                   onPressed: () => showSettingsBottomSheet(context),
                   icon: CupertinoIcons.settings,
                   tooltip: 'Settings',
+                  useLiquidGlass: false,
                 ),
               ),
 
@@ -416,6 +348,7 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                     icon: CupertinoIcons.location_fill,
                     tooltip: 'Recenter',
                     size: 44,
+                    useLiquidGlass: false,
                   ),
                 ),
             ],

@@ -80,6 +80,7 @@ class _TravellerShellState extends State<TravellerShell> {
           bottomNavigationBar: PremiumBottomNavBar(
             currentIndex: tabIndex,
             onTap: (i) => _appState.setTravellerTab(i),
+            forceSolidStyle: tabIndex == 0,
             onExtraButtonTap: tabIndex == 0
                 ? () {
                     ScaffoldMessenger.of(context).showSnackBar(
