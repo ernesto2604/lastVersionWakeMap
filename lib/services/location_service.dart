@@ -12,10 +12,29 @@ enum LocationPermissionStatus {
 
 class LocationService {
   static const String _tag = '[LocationService]';
+  Future<LocationPermissionStatus>? _permissionRequestInFlight;
 
   /// Check and request location permissions.
   /// Returns a detailed status enum instead of a plain bool.
   Future<LocationPermissionStatus> checkAndRequestPermission() async {
+    final inFlight = _permissionRequestInFlight;
+    if (inFlight != null) {
+      debugPrint('$_tag Reusing in-flight permission request');
+      return inFlight;
+    }
+
+    final request = _checkAndRequestPermissionInternal();
+    _permissionRequestInFlight = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_permissionRequestInFlight, request)) {
+        _permissionRequestInFlight = null;
+      }
+    }
+  }
+
+  Future<LocationPermissionStatus> _checkAndRequestPermissionInternal() async {
     bool serviceEnabled = false;
     try {
       serviceEnabled = await Geolocator.isLocationServiceEnabled();

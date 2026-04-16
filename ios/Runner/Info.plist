@@ -48,6 +48,10 @@
 	<string>$(GMS_API_KEY)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WakeMap uses your location to show your position on the map and trigger destination alarms while the app is in use.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>WakeMap can continue using location for destination alarm reliability when you allow background access.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>WakeMap can continue using location for destination alarm reliability when you allow background access.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
