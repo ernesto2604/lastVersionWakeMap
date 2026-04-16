@@ -441,7 +441,7 @@ class _TravellerGuideScreenState extends State<TravellerGuideScreen> {
                 controller: _textController,
                 decoration: InputDecoration(
                   hintText: 'Ask the guide...',
-                  hintStyle: TextStyle(
+                  hintStyle: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.42),
                   ),
                   border: InputBorder.none,

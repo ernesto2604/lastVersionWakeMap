@@ -14,6 +14,7 @@ class AlarmService {
 
   Future<AlarmModel> createAlarm({
     required String name,
+    required String locationLabel,
     required double latitude,
     required double longitude,
     required double radiusMeters,
@@ -21,6 +22,7 @@ class AlarmService {
     final alarm = AlarmModel(
       id: _uuid.v4(),
       name: name,
+      locationLabel: locationLabel,
       latitude: latitude,
       longitude: longitude,
       radiusMeters: radiusMeters,

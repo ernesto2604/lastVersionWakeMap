@@ -1,10 +1,13 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_state_provider.dart';
-import '../../app/routes.dart';
 import '../../widgets/alarms/alarm_card.dart';
 import '../../widgets/common/empty_state_widget.dart';
+import '../../widgets/map/map_wrapper.dart';
 import '../shared/alarm_detail_screen.dart';
+import '../shared/create_alarm_screen.dart';
+import '../shared/settings_screen.dart';
 
 class CommuterAlarmsScreen extends StatelessWidget {
   const CommuterAlarmsScreen({super.key});
@@ -13,46 +16,61 @@ class CommuterAlarmsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<AppStateProvider>(
       builder: (context, appState, _) {
+        final topControlsOffset = MediaQuery.of(context).padding.top + 8;
+
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('My Alarms'),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.settings_outlined),
-                onPressed: () =>
-                    Navigator.of(context).pushNamed(AppRoutes.settings),
-                tooltip: 'Settings',
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: appState.alarms.isEmpty
+                    ? const EmptyStateWidget(
+                        icon: Icons.alarm_off_outlined,
+                        title: 'No alarms yet',
+                        subtitle:
+                            'Tap + to create a location alarm.\nYou\'ll be notified when you arrive.',
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.only(
+                          top: topControlsOffset + 52,
+                          bottom: 88,
+                        ),
+                        itemCount: appState.alarms.length,
+                        itemBuilder: (context, index) {
+                          final alarm = appState.alarms[index];
+                          return AlarmCard(
+                            alarm: alarm,
+                            onTap: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => AlarmDetailScreen(alarm: alarm),
+                              ),
+                            ),
+                            onToggle: () => appState.toggleAlarm(alarm.id),
+                            onDelete: () => _confirmDelete(context, appState, alarm.id, alarm.name),
+                          );
+                        },
+                      ),
+              ),
+              Positioned(
+                top: topControlsOffset,
+                left: 12,
+                child: MapWrapper.circularControl(
+                  context: context,
+                  onPressed: () => showSettingsBottomSheet(context),
+                  icon: CupertinoIcons.settings,
+                  tooltip: 'Settings',
+                ),
+              ),
+              Positioned(
+                top: topControlsOffset,
+                right: 12,
+                child: MapWrapper.circularControl(
+                  context: context,
+                  onPressed: () => showCreateAlarmBottomSheet(context),
+                  icon: CupertinoIcons.add,
+                  tooltip: 'Add alarm',
+                ),
               ),
             ],
-          ),
-          body: appState.alarms.isEmpty
-              ? const EmptyStateWidget(
-                  icon: Icons.alarm_off_outlined,
-                  title: 'No alarms yet',
-                  subtitle:
-                      'Tap + to create a location alarm.\nYou\'ll be notified when you arrive.',
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(top: 8, bottom: 88),
-                  itemCount: appState.alarms.length,
-                  itemBuilder: (context, index) {
-                    final alarm = appState.alarms[index];
-                    return AlarmCard(
-                      alarm: alarm,
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AlarmDetailScreen(alarm: alarm),
-                        ),
-                      ),
-                      onToggle: () => appState.toggleAlarm(alarm.id),
-                      onDelete: () => _confirmDelete(context, appState, alarm.id, alarm.name),
-                    );
-                  },
-                ),
-          floatingActionButton: FloatingActionButton(
-            onPressed: () =>
-                Navigator.of(context).pushNamed(AppRoutes.createAlarm),
-            child: const Icon(Icons.add),
           ),
         );
       },
@@ -61,17 +79,18 @@ class CommuterAlarmsScreen extends StatelessWidget {
 
   void _confirmDelete(
       BuildContext context, AppStateProvider appState, String id, String name) {
-    showDialog(
+    showCupertinoDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Delete Alarm'),
         content: Text('Delete "$name"?'),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () {
               Navigator.pop(ctx);
               appState.deleteAlarm(id);

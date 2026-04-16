@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state_provider.dart';
 import '../screens/shared/mode_selection_screen.dart';
@@ -13,6 +14,12 @@ class WakeMapApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Enforce debug paint overlays off (including baseline lines).
+    debugPaintBaselinesEnabled = false;
+    debugPaintSizeEnabled = false;
+    debugPaintPointersEnabled = false;
+    debugPaintLayerBordersEnabled = false;
+
     return MaterialApp(
       title: 'WakeMap',
       debugShowCheckedModeBanner: false,

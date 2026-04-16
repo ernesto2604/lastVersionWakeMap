@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/location_service.dart';
-import '../../app/routes.dart';
 import '../../widgets/map/map_wrapper.dart';
+import '../shared/settings_screen.dart';
 
 class TravellerMapScreen extends StatefulWidget {
   const TravellerMapScreen({super.key});
@@ -35,6 +37,9 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
   /// True when startup camera had to use fallback (permission/services/error).
   bool _usedFallbackInitialPosition = false;
+
+  /// Enables GoogleMap location layer only after permission is confirmed.
+  bool _canShowMyLocation = false;
 
   /// Auto-follow is enabled by default and is disabled after manual map gestures.
   bool _isAutoFollowEnabled = true;
@@ -111,6 +116,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     setState(() {
       _initialMapTarget = target;
       _usedFallbackInitialPosition = usedFallback;
+      _canShowMyLocation = !usedFallback;
       _isLoadingInitialPosition = false;
     });
 
@@ -292,8 +298,6 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     if (_isLoadingInitialPosition) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
@@ -301,6 +305,10 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     return Consumer<AppStateProvider>(
       builder: (context, appState, _) {
         final initialTarget = _initialMapTarget ?? _fallbackLocation;
+        final bottomInset = MediaQuery.paddingOf(context).bottom;
+        final navBottomPadding = math.max(10.0, bottomInset * 0.55);
+        final navOverlayHeight = 62.0 + navBottomPadding;
+        final controlsBottomOffset = navOverlayHeight + 16;
 
         return Scaffold(
           body: Stack(
@@ -318,8 +326,9 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                     markers: _buildMarkers(appState),
                     circles: _buildCircles(appState),
                     polylines: _buildPolylines(appState),
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: true,
+                    compassEnabled: false,
+                    myLocationEnabled: _canShowMyLocation,
+                    myLocationButtonEnabled: false,
                     zoomControlsEnabled: false,
                   ),
                 ),
@@ -330,15 +339,29 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                   top: MediaQuery.of(context).padding.top + 60,
                   left: 12,
                   right: 12,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Text(
-                        'Location unavailable. Showing fallback area.',
-                        style: theme.textTheme.bodySmall,
+                  child: MapWrapper.overlay(
+                    MapWrapper.frostedPill(
+                      child: Row(
+                        children: [
+                          const Icon(
+                            CupertinoIcons.location_slash,
+                            size: 16,
+                            color: CupertinoColors.systemOrange,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Location unavailable. Showing fallback area.',
+                              style: CupertinoTheme.of(context)
+                                  .textTheme
+                                  .tabLabelTextStyle
+                                  .copyWith(
+                                    color: CupertinoColors.label,
+                                    fontSize: 13,
+                                  ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -348,19 +371,11 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
               Positioned(
                 top: MediaQuery.of(context).padding.top + 8,
                 left: 12,
-                child: MapWrapper.overlay(
-                  CircleAvatar(
-                    backgroundColor: theme.colorScheme.surface,
-                    child: IconButton(
-                      icon: Icon(
-                        Icons.settings_outlined,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed(AppRoutes.settings),
-                      tooltip: 'Settings',
-                    ),
-                  ),
+                child: MapWrapper.circularControl(
+                  context: context,
+                  onPressed: () => showSettingsBottomSheet(context),
+                  icon: CupertinoIcons.settings,
+                  tooltip: 'Settings',
                 ),
               ),
 
@@ -370,70 +385,70 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                   top: MediaQuery.of(context).padding.top + 8,
                   right: 12,
                   child: MapWrapper.overlay(
-                    Card(
-                      color: theme.colorScheme.secondaryContainer,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.auto_awesome,
-                              size: 16,
-                              color: theme.colorScheme.onSecondaryContainer,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${appState.currentPlan!.stops.length} stops',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSecondaryContainer,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
+                    MapWrapper.frostedPill(
+                      backgroundColor: CupertinoColors.systemTeal.withValues(
+                        alpha: 0.16,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            CupertinoIcons.sparkles,
+                            size: 16,
+                            color: CupertinoColors.systemTeal,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${appState.currentPlan!.stops.length} stops',
+                            style: CupertinoTheme.of(context)
+                                .textTheme
+                                .tabLabelTextStyle
+                                .copyWith(
+                                  color: CupertinoColors.systemTeal,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
 
-              // Mic button (inactive placeholder)
-              Positioned(
-                bottom: 24,
-                right: 16,
-                child: MapWrapper.overlay(
-                  FloatingActionButton(
-                    heroTag: 'mic_traveller',
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Voice input coming soon!'),
-                        ),
-                      );
-                    },
-                    backgroundColor: theme.colorScheme.secondaryContainer,
-                    child: Icon(
-                      Icons.mic,
-                      color: theme.colorScheme.onSecondaryContainer,
+              if (appState.currentPlan != null)
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 52,
+                  right: 12,
+                  child: MapWrapper.overlay(
+                    MapWrapper.frostedPill(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      child: Text(
+                        'Route active',
+                        style: CupertinoTheme.of(context)
+                            .textTheme
+                            .tabLabelTextStyle
+                            .copyWith(
+                              color: CupertinoColors.secondaryLabel,
+                              fontSize: 12,
+                            ),
+                      ),
                     ),
                   ),
                 ),
-              ),
 
               if (!_isAutoFollowEnabled)
                 Positioned(
-                  bottom: 96,
+                  bottom: controlsBottomOffset,
                   right: 16,
-                  child: MapWrapper.overlay(
-                    FloatingActionButton.small(
-                      heroTag: 'recenter_traveller',
-                      onPressed: _onRecenterPressed,
-                      tooltip: 'Recenter',
-                      child: const Icon(Icons.my_location),
-                    ),
+                  child: MapWrapper.circularControl(
+                    context: context,
+                    onPressed: _onRecenterPressed,
+                    icon: CupertinoIcons.location_fill,
+                    tooltip: 'Recenter',
+                    size: 44,
                   ),
                 ),
             ],

@@ -26,8 +26,26 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>GMSApiKey</key>
-	<string>YOUR_IOS_GOOGLE_MAPS_API_KEY</string>
+	<string>$(GMS_API_KEY)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WakeMap uses your location to show your position on the map and trigger destination alarms while the app is in use.</string>
 	<key>UIApplicationSceneManifest</key>

@@ -8,6 +8,7 @@ import '../models/guide_session_state.dart';
 import '../models/mock_plan_model.dart';
 import '../services/alarm_service.dart';
 import '../services/gemini_guide_service.dart';
+import '../services/local_notification_service.dart';
 import '../services/location_service.dart';
 import '../services/mock_guide_service.dart';
 import '../services/storage_service.dart';
@@ -171,12 +172,14 @@ class AppStateProvider extends ChangeNotifier {
 
   Future<void> createAlarm({
     required String name,
+    required String locationLabel,
     required double latitude,
     required double longitude,
     required double radiusMeters,
   }) async {
     await _alarmService.createAlarm(
       name: name,
+      locationLabel: locationLabel,
       latitude: latitude,
       longitude: longitude,
       radiusMeters: radiusMeters,
@@ -280,6 +283,9 @@ class AppStateProvider extends ChangeNotifier {
         _permissionGranted = true;
       }
 
+      // Keep notification permission request close to alarm monitoring start.
+      await LocalNotificationService.instance.requestPermissionsIfNeeded();
+
       // Initial position: only fetch once per app session
       if (!_hasFetchedInitialPosition) {
         _currentPosition = await _location.getPositionUnchecked();
@@ -376,6 +382,13 @@ class AppStateProvider extends ChangeNotifier {
 
     debugPrint(
       '$_tag Alarm "${alarm.name}" marked as triggered. Active count: $_activeAlarmCount',
+    );
+
+    await LocalNotificationService.instance.showAlarmTriggered(
+      title: 'You have arrived',
+      body: alarm.locationLabel.trim().isNotEmpty
+          ? 'Destination: ${alarm.locationLabel.trim()}'
+          : alarm.name,
     );
 
     if (_activeAlarmCount == 0) {

@@ -3,6 +3,7 @@ import 'dart:convert';
 class AlarmModel {
   final String id;
   String name;
+  String locationLabel;
   double latitude;
   double longitude;
   double radiusMeters;
@@ -13,6 +14,7 @@ class AlarmModel {
   AlarmModel({
     required this.id,
     required this.name,
+    this.locationLabel = '',
     required this.latitude,
     required this.longitude,
     this.radiusMeters = 500,
@@ -24,6 +26,7 @@ class AlarmModel {
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
+        'locationLabel': locationLabel,
         'latitude': latitude,
         'longitude': longitude,
         'radiusMeters': radiusMeters,
@@ -35,6 +38,7 @@ class AlarmModel {
   factory AlarmModel.fromJson(Map<String, dynamic> json) => AlarmModel(
         id: json['id'] as String,
         name: json['name'] as String,
+        locationLabel: json['locationLabel'] as String? ?? '',
         latitude: (json['latitude'] as num).toDouble(),
         longitude: (json['longitude'] as num).toDouble(),
         radiusMeters: (json['radiusMeters'] as num).toDouble(),
@@ -50,6 +54,7 @@ class AlarmModel {
 
   AlarmModel copyWith({
     String? name,
+    String? locationLabel,
     double? latitude,
     double? longitude,
     double? radiusMeters,
@@ -59,6 +64,7 @@ class AlarmModel {
     return AlarmModel(
       id: id,
       name: name ?? this.name,
+      locationLabel: locationLabel ?? this.locationLabel,
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       radiusMeters: radiusMeters ?? this.radiusMeters,

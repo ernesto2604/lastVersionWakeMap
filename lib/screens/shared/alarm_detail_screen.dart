@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
@@ -51,17 +52,18 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   }
 
   Future<void> _deleteAlarm() async {
-    final confirm = await showDialog<bool>(
+    final confirm = await showCupertinoDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (ctx) => CupertinoAlertDialog(
         title: const Text('Delete Alarm'),
         content: Text('Delete "${widget.alarm.name}"?'),
         actions: [
-          TextButton(
+          CupertinoDialogAction(
             onPressed: () => Navigator.pop(ctx, false),
             child: const Text('Cancel'),
           ),
-          TextButton(
+          CupertinoDialogAction(
+            isDestructiveAction: true,
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Delete'),
           ),
@@ -82,21 +84,29 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
     final alarmPos = LatLng(widget.alarm.latitude, widget.alarm.longitude);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Alarm Details'),
-        actions: [
-          if (_hasChanges)
-            TextButton.icon(
-              onPressed: _saveChanges,
-              icon: const Icon(Icons.check),
-              label: const Text('Save'),
+      appBar: CupertinoNavigationBar(
+        middle: const Text('Alarm Details'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_hasChanges)
+              CupertinoButton(
+                padding: const EdgeInsets.only(right: 6),
+                minimumSize: const Size(28, 28),
+                onPressed: _saveChanges,
+                child: const Text('Save'),
+              ),
+            CupertinoButton(
+              padding: EdgeInsets.zero,
+              minimumSize: const Size(28, 28),
+              onPressed: _deleteAlarm,
+              child: const Icon(
+                CupertinoIcons.delete,
+                color: CupertinoColors.destructiveRed,
+              ),
             ),
-          IconButton(
-            icon: Icon(Icons.delete_outline, color: theme.colorScheme.error),
-            onPressed: _deleteAlarm,
-            tooltip: 'Delete',
-          ),
-        ],
+          ],
+        ),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -114,16 +124,39 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
 
           // Active toggle
           Card(
-            child: SwitchListTile(
-              title: const Text('Active'),
-              subtitle: Text(
-                _isActive ? 'Alarm is active' : 'Alarm is inactive',
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Active',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _isActive ? 'Alarm is active' : 'Alarm is inactive',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.62,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  CupertinoSwitch(
+                    value: _isActive,
+                    onChanged: (val) {
+                      setState(() => _isActive = val);
+                      _markChanged();
+                    },
+                  ),
+                ],
               ),
-              value: _isActive,
-              onChanged: (val) {
-                setState(() => _isActive = val);
-                _markChanged();
-              },
             ),
           ),
           const SizedBox(height: 16),

@@ -49,6 +49,13 @@ curl http://localhost:8080/health
 
 ### 2) Run Flutter pointing to the backend
 
+Debug convenience fallback:
+- If `API_BASE_URL` is not provided, WakeMap now auto-uses a debug default:
+- Android: `http://10.0.2.2:8080`
+- Web/Desktop/iOS simulator: `http://localhost:8080`
+
+This means plain `flutter run` works when your backend is running locally.
+
 Web:
 
 ```bash
@@ -70,8 +77,19 @@ Notes:
 
 WakeMap uses Google Maps + Geolocator on iOS.
 
-1. Open `ios/Runner/Info.plist` and set:
-   - `GMSApiKey` to your iOS Maps SDK key.
+1. Set your iOS Google Maps key in all build configs:
+   - `ios/Flutter/Debug.xcconfig`
+   - `ios/Flutter/Profile.xcconfig`
+   - `ios/Flutter/Release.xcconfig`
+
+Use:
+
+```bash
+GMS_API_KEY=YOUR_REAL_IOS_MAPS_KEY
+```
+
+Info.plist reads this value via `$(GMS_API_KEY)`.
+
 2. Install iOS pods from the project root:
 
 ```bash
@@ -89,3 +107,26 @@ flutter run -d ios
 Notes:
 - iOS deployment target is set to 14.0 to match current plugin requirements.
 - Location permission is configured for "When In Use" behavior (foreground MVP tracking).
+- Alarm arrival notifications are local notifications and require user permission on first use.
+- Debug HTTP backend calls to `localhost` are allowed via ATS exception in `Info.plist`.
+
+## Build IPA (iOS)
+
+1. Make sure signing is configured in Xcode:
+   - Open `ios/Runner.xcworkspace`
+   - Select Runner target
+   - Set Team and a unique Bundle Identifier
+
+2. Build commands:
+
+```bash
+flutter clean
+flutter pub get
+cd ios
+pod install
+cd ..
+flutter build ipa --release
+```
+
+3. If needed, open Xcode and Archive manually:
+   - Product > Archive

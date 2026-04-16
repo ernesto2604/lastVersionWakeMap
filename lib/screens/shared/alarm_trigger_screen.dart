@@ -132,8 +132,7 @@ class _AlarmTriggerScreenState extends State<AlarmTriggerScreen> {
                         appState.mode == AppMode.traveller
                             ? 'Start Exploring'
                             : 'Dismiss',
-                        style: const TextStyle(
-                          fontSize: 18,
+                        style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),

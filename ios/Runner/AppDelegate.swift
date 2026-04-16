@@ -10,7 +10,8 @@ import UIKit
   ) -> Bool {
     if let mapsApiKey = Bundle.main.object(forInfoDictionaryKey: "GMSApiKey") as? String {
       let trimmedKey = mapsApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-      if !trimmedKey.isEmpty {
+      let looksLikeBuildPlaceholder = trimmedKey.hasPrefix("$(") && trimmedKey.hasSuffix(")")
+      if !trimmedKey.isEmpty && !looksLikeBuildPlaceholder {
         let didProvide = GMSServices.provideAPIKey(trimmedKey)
         if !didProvide {
           NSLog("[WakeMap][iOS] Invalid Google Maps API key in Info.plist key 'GMSApiKey'.")

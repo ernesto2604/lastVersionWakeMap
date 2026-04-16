@@ -1,5 +1,7 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../widgets/navigation/premium_bottom_nav_bar.dart';
 import '../../providers/app_state_provider.dart';
 import '../../app/routes.dart';
 import 'traveller_map_screen.dart';
@@ -60,6 +62,7 @@ class _TravellerShellState extends State<TravellerShell> {
         _initializedTabs.add(tabIndex);
 
         return Scaffold(
+          extendBody: true,
           body: IndexedStack(
             index: tabIndex,
             children: [
@@ -74,23 +77,29 @@ class _TravellerShellState extends State<TravellerShell> {
                   : const SizedBox.shrink(),
             ],
           ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: tabIndex,
-            onDestinationSelected: (i) => _appState.setTravellerTab(i),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.map_outlined),
-                selectedIcon: Icon(Icons.map),
+          bottomNavigationBar: PremiumBottomNavBar(
+            currentIndex: tabIndex,
+            onTap: (i) => _appState.setTravellerTab(i),
+            onExtraButtonTap: tabIndex == 0
+                ? () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Voice input coming soon!')),
+                    );
+                  }
+                : null,
+            extraButtonIcon: CupertinoIcons.mic,
+            extraButtonLabel: 'Voice',
+            items: const [
+              PremiumBottomNavItem(
+                icon: CupertinoIcons.map,
                 label: 'Map',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.auto_awesome_outlined),
-                selectedIcon: Icon(Icons.auto_awesome),
+              PremiumBottomNavItem(
+                icon: CupertinoIcons.sparkles,
                 label: 'Guide',
               ),
-              NavigationDestination(
-                icon: Icon(Icons.alarm_outlined),
-                selectedIcon: Icon(Icons.alarm),
+              PremiumBottomNavItem(
+                icon: CupertinoIcons.alarm,
                 label: 'Alarms',
               ),
             ],

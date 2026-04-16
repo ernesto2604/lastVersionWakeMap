@@ -17,6 +17,8 @@ dependencies:
   provider: ^6.1.4
   http: ^1.3.0
   pointer_interceptor: ^0.10.1+2
+  flutter_liquid_glass_plus: ^0.0.7
+  flutter_local_notifications: ^18.0.1
 
 dev_dependencies:
   flutter_test:
@@ -25,3 +27,24 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  fonts:
+    - family: SF Pro Text
+      fonts:
+        - asset: assets/font/SF-Pro-Text-Regular.otf
+          weight: 400
+        - asset: assets/font/SF-Pro-Text-Medium.otf
+          weight: 500
+        - asset: assets/font/SF-Pro-Text-Semibold.otf
+          weight: 600
+        - asset: assets/font/SF-Pro-Text-Bold.otf
+          weight: 700
+    - family: SF Pro Display
+      fonts:
+        - asset: assets/font/SF-Pro-Display-Regular.otf
+          weight: 400
+        - asset: assets/font/SF-Pro-Display-Medium.otf
+          weight: 500
+        - asset: assets/font/SF-Pro-Display-Semibold.otf
+          weight: 600
+        - asset: assets/font/SF-Pro-Display-Bold.otf
+          weight: 700
