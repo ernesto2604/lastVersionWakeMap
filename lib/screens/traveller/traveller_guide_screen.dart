@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -427,11 +428,14 @@ class _TravellerGuideScreenState extends State<TravellerGuideScreen> {
   Widget _buildInputBar(BuildContext context, AppStateProvider appState) {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final bottomSafe = MediaQuery.paddingOf(context).bottom;
+    // Navbar = barHeight(62) + verticalPadding(max(10, bottomSafe*0.55)) + tiny gap
+    final navBarOffset = 62.0 + math.max(10.0, bottomSafe * 0.55) + 4.0;
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
-      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + 12),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset > 0 ? bottomInset + 12 : navBarOffset),
       child: _buildGlassCard(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Row(
@@ -483,7 +487,9 @@ class _TravellerGuideScreenState extends State<TravellerGuideScreen> {
         final hasPlan = plan != null;
 
         return Scaffold(
+          backgroundColor: Colors.transparent,
           body: SafeArea(
+            bottom: false,
             child: Stack(
               children: [
                 CustomScrollView(
@@ -511,8 +517,10 @@ class _TravellerGuideScreenState extends State<TravellerGuideScreen> {
                     SliverToBoxAdapter(
                       child: _buildChatSection(context, appState, messages, hasPlan),
                     ),
-                    const SliverToBoxAdapter(
-                      child: SizedBox(height: 120),
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: 120 + MediaQuery.paddingOf(context).bottom,
+                      ),
                     ),
                   ],
                 ),

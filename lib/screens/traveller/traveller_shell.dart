@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +29,7 @@ class _TravellerShellState extends State<TravellerShell> {
 
   /// Tabs initialized on demand. Guide tab (1) may be initialized
   /// programmatically by dismissAlarmTrigger() setting travellerTabIndex=1.
+
   final Set<int> _initializedTabs = {0}; // Tab 0 (Map) created immediately
 
   @override
@@ -67,9 +66,6 @@ class _TravellerShellState extends State<TravellerShell> {
       _isCapturingVoice = true;
       _liveTranscript = '';
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Listening... say your alarm destination.')),
-    );
 
     try {
       final transcript = await _voiceAlarmService.listenOnce(
@@ -161,7 +157,7 @@ class _TravellerShellState extends State<TravellerShell> {
         _initializedTabs.add(tabIndex);
 
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final navBottomPadding = math.max(10.0, bottomInset * 0.55);
+        final navBottomPadding = bottomInset > 0 ? bottomInset * 0.55 : 10.0;
         final transcriptBottomOffset = 62.0 + navBottomPadding + 8;
 
         return Scaffold(
@@ -213,17 +209,10 @@ class _TravellerShellState extends State<TravellerShell> {
           bottomNavigationBar: PremiumBottomNavBar(
             currentIndex: tabIndex,
             onTap: (i) => _appState.setTravellerTab(i),
-            onExtraButtonTap: tabIndex == 0
-                ? _onVoiceAlarmPressed
-                : null,
-            extraButtonIcon: _isCapturingVoice
-              ? CupertinoIcons.mic_fill
-              : CupertinoIcons.mic,
+            onExtraButtonTap: tabIndex == 0 ? _onVoiceAlarmPressed : null,
+            extraButtonIcon: _isCapturingVoice ? CupertinoIcons.mic_fill : CupertinoIcons.mic,
             extraButtonLabel: _isCapturingVoice ? 'Listening' : 'Voice',
-            extraButtonIconColor: _isCapturingVoice
-              ? CupertinoColors.systemRed
-              : null,
-            preferLightForeground: tabIndex == 0,
+            extraButtonIconColor: _isCapturingVoice ? CupertinoColors.systemRed : null,
             items: const [
               PremiumBottomNavItem(
                 icon: CupertinoIcons.map,

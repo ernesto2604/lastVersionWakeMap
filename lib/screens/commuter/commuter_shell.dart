@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -66,9 +66,6 @@ class _CommuterShellState extends State<CommuterShell> {
       _isCapturingVoice = true;
       _liveTranscript = '';
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Listening... say your alarm destination.')),
-    );
 
     try {
       final transcript = await _voiceAlarmService.listenOnce(
@@ -160,7 +157,7 @@ class _CommuterShellState extends State<CommuterShell> {
         _initializedTabs.add(tabIndex);
 
         final bottomInset = MediaQuery.paddingOf(context).bottom;
-        final navBottomPadding = math.max(10.0, bottomInset * 0.55);
+        final navBottomPadding = bottomInset > 0 ? bottomInset * 0.55 : 10.0;
         final transcriptBottomOffset = 62.0 + navBottomPadding + 8;
 
         return Scaffold(
@@ -221,7 +218,6 @@ class _CommuterShellState extends State<CommuterShell> {
             extraButtonIconColor: _isCapturingVoice
               ? CupertinoColors.systemRed
               : null,
-            preferLightForeground: tabIndex == 1,
             items: const [
               PremiumBottomNavItem(
                 icon: CupertinoIcons.alarm,

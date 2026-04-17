@@ -5,7 +5,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import '../../models/alarm_model.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/location_service.dart';
 import '../../services/route_service.dart';
@@ -30,7 +29,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
   GoogleMapController? _mapController;
   StreamSubscription? _mapFollowSub;
   late final AppStateProvider _appState;
-  final RouteService _routeService = RouteService();
 
   /// Resolved once for startup. Map is built only after this is non-null.
   LatLng? _initialMapTarget;
@@ -44,11 +42,18 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
   /// Enables GoogleMap location layer only after permission is confirmed.
   bool _canShowMyLocation = false;
 
-  /// Auto-follow is enabled by default and is disabled after manual map gestures.
-  bool _isAutoFollowEnabled = true;
+  /// Auto-follow is disabled by default; enabled only when alarms are active.
+  bool _isAutoFollowEnabled = false;
 
   /// Distinguishes app-driven camera moves from user gestures.
   bool _isProgrammaticCameraMove = false;
+
+  /// Tracks previous active alarm count to detect activation/deactivation.
+  int _previousActiveAlarmCount = 0;
+
+  /// The polyline route to the active alarm(s).
+  List<LatLng>? _alarmRoute;
+  final RouteService _routeService = RouteService();
 
   /// True when map controller has been created.
   bool _isMapControllerReady = false;
@@ -59,29 +64,116 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
   /// Latest device location received from map follow stream.
   LatLng? _latestDeviceLocation;
 
-  /// Decoded route points from device location to active alarm.
-  List<LatLng> _alarmRoutePoints = const [];
-
-  /// Active alarm id used by the current route.
-  String? _routeAlarmId;
-
-  /// Origin used by the current route.
-  LatLng? _routeOrigin;
-
-  /// Prevents concurrent route requests.
-  bool _isFetchingRoute = false;
-
   @override
   void initState() {
     super.initState();
     _appState = context.read<AppStateProvider>();
+    _appState.addListener(_onAppStateChanged);
+    _previousActiveAlarmCount = _appState.alarms.where((a) => a.isActive).length;
     _resolveInitialMapTarget();
   }
 
   @override
   void dispose() {
+    _appState.removeListener(_onAppStateChanged);
     _mapFollowSub?.cancel();
     super.dispose();
+  }
+
+  /// React to alarm activation/deactivation transitions.
+  void _onAppStateChanged() {
+    final activeCount = _appState.alarms.where((a) => a.isActive).length;
+
+    if (activeCount > 0 && _previousActiveAlarmCount == 0) {
+      debugPrint('$_tag Alarm activated, fitting bounds and fetching route');
+      setState(() => _isAutoFollowEnabled = true);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _fitBoundsToActiveAlarms();
+        _fetchAlarmRoute();
+      });
+    } else if (activeCount == 0 && _previousActiveAlarmCount > 0) {
+      debugPrint('$_tag All alarms deactivated, recentering on device');
+      setState(() {
+        _isAutoFollowEnabled = false;
+        _alarmRoute = null;
+      });
+      final target = _latestDeviceLocation ?? _initialMapTarget;
+      if (target != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _recenterCamera(target);
+        });
+      }
+    }
+
+    _previousActiveAlarmCount = activeCount;
+  }
+
+  Future<void> _fetchAlarmRoute() async {
+    final activeAlarms = _appState.alarms.where((a) => a.isActive).toList();
+    if (activeAlarms.isEmpty) return;
+
+    final origin = _latestDeviceLocation ?? _initialMapTarget;
+    if (origin == null) return;
+
+    final destination = LatLng(activeAlarms.first.latitude, activeAlarms.first.longitude);
+
+    try {
+      final route = await _routeService.computeRoutePolyline(
+        origin: origin,
+        destination: destination,
+      );
+      if (mounted && route.isNotEmpty) {
+        setState(() {
+          _alarmRoute = route;
+        });
+      }
+    } catch (e) {
+      debugPrint('$_tag Failed to fetch alarm route: $e');
+    }
+  }
+
+  /// Zoom to fit all active alarm positions + device location.
+  Future<void> _fitBoundsToActiveAlarms() async {
+    if (!_isMapControllerReady || _mapController == null) return;
+
+    final activeAlarms = _appState.alarms.where((a) => a.isActive).toList();
+    if (activeAlarms.isEmpty) return;
+
+    final points = <LatLng>[];
+    final device = _latestDeviceLocation ?? _initialMapTarget;
+    if (device != null) points.add(device);
+    for (final alarm in activeAlarms) {
+      points.add(LatLng(alarm.latitude, alarm.longitude));
+    }
+    if (points.length < 2) return;
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+    for (final p in points) {
+      minLat = math.min(minLat, p.latitude);
+      maxLat = math.max(maxLat, p.latitude);
+      minLng = math.min(minLng, p.longitude);
+      maxLng = math.max(maxLng, p.longitude);
+    }
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+
+    _isProgrammaticCameraMove = true;
+    try {
+      await _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(bounds, 80),
+      );
+      debugPrint('$_mapTag Fitted bounds to active alarms');
+    } catch (e) {
+      debugPrint('$_tag Failed to fit bounds: $e');
+    } finally {
+      _isProgrammaticCameraMove = false;
+    }
   }
 
   /// One-time startup target resolution for map camera, independent of tracking.
@@ -136,11 +228,9 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
     });
 
     _lastFollowedTarget = target;
-    _latestDeviceLocation = target;
 
     if (!usedFallback) {
       _startMapFollowStream();
-      _syncAlarmRoute(_appState);
       debugPrint('$_mapTag Auto-follow enabled for commuter map');
     }
   }
@@ -153,10 +243,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
     final current = _latestDeviceLocation;
     if (current != null && _isAutoFollowEnabled) {
       _recenterCamera(current);
-    }
-
-    if (_alarmRoutePoints.isNotEmpty) {
-      _fitRouteToView(_alarmRoutePoints);
     }
   }
 
@@ -195,8 +281,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
     if (_isAutoFollowEnabled) {
       _recenterCamera(nextLocation);
     }
-
-    _syncAlarmRoute(_appState);
   }
 
   Future<void> _recenterCamera(LatLng target) async {
@@ -279,138 +363,23 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
   }
 
   Set<Polyline> _buildPolylines() {
-    if (_alarmRoutePoints.length < 2) return const {};
+    final polylines = <Polyline>{};
 
-    return {
-      Polyline(
-        polylineId: const PolylineId('active_alarm_route'),
-        points: _alarmRoutePoints,
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.9),
-        width: 5,
-      ),
-    };
-  }
-
-  AlarmModel? _primaryActiveAlarm(AppStateProvider appState) {
-    for (final alarm in appState.alarms) {
-      if (alarm.isActive) return alarm;
-    }
-    return null;
-  }
-
-  void _syncAlarmRoute(AppStateProvider appState) {
-    final alarm = _primaryActiveAlarm(appState);
-    if (alarm == null) {
-      if (_alarmRoutePoints.isNotEmpty || _routeAlarmId != null) {
-        setState(() {
-          _alarmRoutePoints = const [];
-          _routeAlarmId = null;
-          _routeOrigin = null;
-        });
-      }
-
-      final target = _latestDeviceLocation ?? _initialMapTarget;
-      if (target != null && !_isAutoFollowEnabled) {
-        _onRecenterPressed();
-      }
-      return;
+    if (_alarmRoute != null && _alarmRoute!.isNotEmpty) {
+      polylines.add(
+        Polyline(
+          polylineId: const PolylineId('alarm_route'),
+          points: _alarmRoute!,
+          color: Theme.of(context).colorScheme.primary,
+          width: 6,
+          jointType: JointType.round,
+          startCap: Cap.roundCap,
+          endCap: Cap.roundCap,
+        ),
+      );
     }
 
-    final origin = _latestDeviceLocation ?? _initialMapTarget;
-    if (origin == null) return;
-
-    final alarmChanged = _routeAlarmId != alarm.id;
-    final originChanged = _routeOrigin == null ||
-        _appState.locationService.distanceBetween(
-              _routeOrigin!.latitude,
-              _routeOrigin!.longitude,
-              origin.latitude,
-              origin.longitude,
-            ) >
-            45;
-
-    if (!alarmChanged && !originChanged) return;
-    _updateRouteForActiveAlarm(origin: origin, alarm: alarm);
-  }
-
-  Future<void> _updateRouteForActiveAlarm({
-    required LatLng origin,
-    required AlarmModel alarm,
-  }) async {
-    if (_isFetchingRoute) return;
-    _isFetchingRoute = true;
-
-    final destination = LatLng(alarm.latitude, alarm.longitude);
-    final points = await _routeService.computeRoutePolyline(
-      origin: origin,
-      destination: destination,
-    );
-
-    if (!mounted) {
-      _isFetchingRoute = false;
-      return;
-    }
-
-    setState(() {
-      _alarmRoutePoints = points;
-      _routeAlarmId = alarm.id;
-      _routeOrigin = origin;
-    });
-
-    _isFetchingRoute = false;
-
-    if (points.length >= 2) {
-      _fitRouteToView(points);
-    }
-  }
-
-  Future<void> _fitRouteToView(List<LatLng> points) async {
-    if (!_isMapControllerReady || _mapController == null || points.isEmpty) {
-      return;
-    }
-
-    if (points.length == 1) {
-      _recenterCamera(points.first);
-      return;
-    }
-
-    double minLat = points.first.latitude;
-    double maxLat = points.first.latitude;
-    double minLng = points.first.longitude;
-    double maxLng = points.first.longitude;
-
-    for (final p in points.skip(1)) {
-      if (p.latitude < minLat) minLat = p.latitude;
-      if (p.latitude > maxLat) maxLat = p.latitude;
-      if (p.longitude < minLng) minLng = p.longitude;
-      if (p.longitude > maxLng) maxLng = p.longitude;
-    }
-
-    final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
-
-    _isProgrammaticCameraMove = true;
-    setState(() {
-      _isAutoFollowEnabled = false;
-    });
-
-    try {
-      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 72));
-      debugPrint('$_mapTag Route fitted to viewport');
-    } catch (_) {
-      // Ignore fit failures when bounds are too tight on first frame.
-    } finally {
-      _isProgrammaticCameraMove = false;
-    }
-  }
-
-  void _scheduleAlarmRouteSync(AppStateProvider appState) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _syncAlarmRoute(appState);
-    });
+    return polylines;
   }
 
   @override
@@ -421,8 +390,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
 
     return Consumer<AppStateProvider>(
       builder: (context, appState, _) {
-        _scheduleAlarmRouteSync(appState);
-
         final initialTarget = _initialMapTarget ?? _fallbackLocation;
         final bottomInset = MediaQuery.paddingOf(context).bottom;
         final navBottomPadding = math.max(10.0, bottomInset * 0.55);
@@ -495,7 +462,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                   onPressed: () => showSettingsBottomSheet(context),
                   icon: CupertinoIcons.settings,
                   tooltip: 'Settings',
-                  iconColor: CupertinoColors.white,
                 ),
               ),
 
@@ -509,7 +475,6 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                     icon: CupertinoIcons.location_fill,
                     tooltip: 'Recenter',
                     size: 44,
-                    iconColor: CupertinoColors.white,
                   ),
                 ),
             ],
