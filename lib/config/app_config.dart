@@ -7,6 +7,8 @@ class AppConfig {
   static const String _definedGoogleMapsApiKey = String.fromEnvironment(
     'GOOGLE_MAPS_API_KEY',
   );
+  static const String _fallbackProductionApiBaseUrl =
+      'https://lastversionwakemap.onrender.com';
 
   // Fallback key used by current local builds. Restrict this key by package
   // name / bundle id and API scope in Google Cloud Console.
@@ -18,9 +20,10 @@ class AppConfig {
     final configured = _definedApiBaseUrl.trim();
     if (configured.isNotEmpty) return configured;
 
-    // Debug fallback to run with plain `flutter run` while backend is local.
-    if (!kDebugMode) return '';
+    // Production default points to the deployed Render backend.
+    if (!kDebugMode) return _fallbackProductionApiBaseUrl;
 
+    // Debug fallback to run with plain `flutter run` while backend is local.
     if (kIsWeb) return 'http://localhost:8080';
 
     switch (defaultTargetPlatform) {

@@ -130,3 +130,39 @@ flutter build ipa --release
 
 3. If needed, open Xcode and Archive manually:
    - Product > Archive
+
+## Deploy Backend To Render
+
+This repo includes a Render blueprint at [render.yaml](render.yaml).
+
+### One-time setup
+
+1. Push your latest code to GitHub.
+2. In Render: New > Blueprint, select this repository.
+3. Confirm service `wakemap-guide-proxy` and deploy.
+4. In Render service environment variables, set:
+   - `GEMINI_API_KEY` (required)
+   - `GEMINI_MODEL` (optional, default already set)
+   - `CORS_ORIGIN` (optional, `*` works for mobile app)
+
+### Verify backend
+
+After deploy, check:
+
+```bash
+curl https://wakemap-guide-proxy.onrender.com/health
+```
+
+You should see `status: "ok"` and `geminiConfigured: true`.
+
+### iOS Builder behavior
+
+For release builds, the Flutter app now defaults to:
+
+- `https://wakemap-guide-proxy.onrender.com`
+
+So Builder iOS build works without passing `API_BASE_URL`.
+
+If your Render service URL is different, update the fallback in:
+
+- [lib/config/app_config.dart](lib/config/app_config.dart)
