@@ -5,8 +5,10 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import '../../models/alarm_model.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/location_service.dart';
+import '../../services/route_service.dart';
 import '../../widgets/map/map_wrapper.dart';
 import '../shared/settings_screen.dart';
 
@@ -28,6 +30,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   GoogleMapController? _mapController;
   StreamSubscription? _mapFollowSub;
   late final AppStateProvider _appState;
+  final RouteService _routeService = RouteService();
 
   /// Resolved once for startup. Map is built only after this is non-null.
   LatLng? _initialMapTarget;
@@ -55,6 +58,18 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
   /// Latest device location received from map follow stream.
   LatLng? _latestDeviceLocation;
+
+  /// Decoded route points from device location to active alarm.
+  List<LatLng> _alarmRoutePoints = const [];
+
+  /// Active alarm id used by the current route.
+  String? _routeAlarmId;
+
+  /// Origin used by the current route.
+  LatLng? _routeOrigin;
+
+  /// Prevents concurrent route requests.
+  bool _isFetchingRoute = false;
 
   @override
   void initState() {
@@ -121,9 +136,11 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     });
 
     _lastFollowedTarget = target;
+    _latestDeviceLocation = target;
 
     if (!usedFallback) {
       _startMapFollowStream();
+      _syncAlarmRoute(_appState);
       debugPrint('$_mapTag Auto-follow enabled for traveller map');
     }
   }
@@ -136,6 +153,10 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     final current = _latestDeviceLocation;
     if (current != null && _isAutoFollowEnabled) {
       _recenterCamera(current);
+    }
+
+    if (_alarmRoutePoints.isNotEmpty) {
+      _fitRouteToView(_alarmRoutePoints);
     }
   }
 
@@ -174,6 +195,8 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     if (_isAutoFollowEnabled) {
       _recenterCamera(nextLocation);
     }
+
+    _syncAlarmRoute(_appState);
   }
 
   Future<void> _recenterCamera(LatLng target) async {
@@ -278,14 +301,27 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   }
 
   Set<Polyline> _buildPolylines(AppStateProvider appState) {
+    final allPolylines = <Polyline>{};
+
+    if (_alarmRoutePoints.length >= 2) {
+      allPolylines.add(
+        Polyline(
+          polylineId: const PolylineId('active_alarm_route'),
+          points: _alarmRoutePoints,
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.9),
+          width: 5,
+        ),
+      );
+    }
+
     final plan = appState.currentPlan;
-    if (plan == null || plan.stops.length < 2) return {};
+    if (plan == null || plan.stops.length < 2) return allPolylines;
 
     final points = plan.stops
         .map((s) => LatLng(s.latitude, s.longitude))
         .toList();
 
-    return {
+    allPolylines.add(
       Polyline(
         polylineId: const PolylineId('plan_route'),
         points: points,
@@ -293,7 +329,131 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
         width: 3,
         patterns: [PatternItem.dash(20), PatternItem.gap(10)],
       ),
-    };
+    );
+
+    return allPolylines;
+  }
+
+  AlarmModel? _primaryActiveAlarm(AppStateProvider appState) {
+    for (final alarm in appState.alarms) {
+      if (alarm.isActive) return alarm;
+    }
+    return null;
+  }
+
+  void _syncAlarmRoute(AppStateProvider appState) {
+    final alarm = _primaryActiveAlarm(appState);
+    if (alarm == null) {
+      if (_alarmRoutePoints.isNotEmpty || _routeAlarmId != null) {
+        setState(() {
+          _alarmRoutePoints = const [];
+          _routeAlarmId = null;
+          _routeOrigin = null;
+        });
+      }
+
+      final target = _latestDeviceLocation ?? _initialMapTarget;
+      if (target != null && !_isAutoFollowEnabled) {
+        _onRecenterPressed();
+      }
+      return;
+    }
+
+    final origin = _latestDeviceLocation ?? _initialMapTarget;
+    if (origin == null) return;
+
+    final alarmChanged = _routeAlarmId != alarm.id;
+    final originChanged = _routeOrigin == null ||
+        _appState.locationService.distanceBetween(
+              _routeOrigin!.latitude,
+              _routeOrigin!.longitude,
+              origin.latitude,
+              origin.longitude,
+            ) >
+            45;
+
+    if (!alarmChanged && !originChanged) return;
+    _updateRouteForActiveAlarm(origin: origin, alarm: alarm);
+  }
+
+  Future<void> _updateRouteForActiveAlarm({
+    required LatLng origin,
+    required AlarmModel alarm,
+  }) async {
+    if (_isFetchingRoute) return;
+    _isFetchingRoute = true;
+
+    final destination = LatLng(alarm.latitude, alarm.longitude);
+    final points = await _routeService.computeRoutePolyline(
+      origin: origin,
+      destination: destination,
+    );
+
+    if (!mounted) {
+      _isFetchingRoute = false;
+      return;
+    }
+
+    setState(() {
+      _alarmRoutePoints = points;
+      _routeAlarmId = alarm.id;
+      _routeOrigin = origin;
+    });
+
+    _isFetchingRoute = false;
+
+    if (points.length >= 2) {
+      _fitRouteToView(points);
+    }
+  }
+
+  Future<void> _fitRouteToView(List<LatLng> points) async {
+    if (!_isMapControllerReady || _mapController == null || points.isEmpty) {
+      return;
+    }
+
+    if (points.length == 1) {
+      _recenterCamera(points.first);
+      return;
+    }
+
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final p in points.skip(1)) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+
+    _isProgrammaticCameraMove = true;
+    setState(() {
+      _isAutoFollowEnabled = false;
+    });
+
+    try {
+      await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(bounds, 72));
+      debugPrint('$_mapTag Route fitted to viewport');
+    } catch (_) {
+      // Ignore fit failures when bounds are too tight on first frame.
+    } finally {
+      _isProgrammaticCameraMove = false;
+    }
+  }
+
+  void _scheduleAlarmRouteSync(AppStateProvider appState) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _syncAlarmRoute(appState);
+    });
   }
 
   @override
@@ -304,6 +464,9 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
     return Consumer<AppStateProvider>(
       builder: (context, appState, _) {
+        _scheduleAlarmRouteSync(appState);
+
+        final theme = Theme.of(context);
         final initialTarget = _initialMapTarget ?? _fallbackLocation;
         final bottomInset = MediaQuery.paddingOf(context).bottom;
         final navBottomPadding = math.max(10.0, bottomInset * 0.55);
@@ -376,7 +539,6 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                   onPressed: () => showSettingsBottomSheet(context),
                   icon: CupertinoIcons.settings,
                   tooltip: 'Settings',
-                  useLiquidGlass: false,
                 ),
               ),
 
@@ -387,16 +549,16 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                   right: 12,
                   child: MapWrapper.overlay(
                     MapWrapper.frostedPill(
-                      backgroundColor: CupertinoColors.systemTeal.withValues(
+                      backgroundColor: theme.colorScheme.onSurface.withValues(
                         alpha: 0.16,
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(
+                          Icon(
                             CupertinoIcons.sparkles,
                             size: 16,
-                            color: CupertinoColors.systemTeal,
+                            color: theme.colorScheme.onSurface,
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -405,7 +567,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                                 .textTheme
                                 .tabLabelTextStyle
                                 .copyWith(
-                                  color: CupertinoColors.systemTeal,
+                                  color: theme.colorScheme.onSurface,
                                   fontWeight: FontWeight.w700,
                                   fontSize: 13,
                                 ),
@@ -450,7 +612,6 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                     icon: CupertinoIcons.location_fill,
                     tooltip: 'Recenter',
                     size: 44,
-                    useLiquidGlass: false,
                   ),
                 ),
             ],

@@ -45,13 +45,17 @@
 		</dict>
 	</dict>
 	<key>GMSApiKey</key>
-	<string>$(GMS_API_KEY)</string>
+	<string>AIzaSyCGo89ToPeDSy-QOzmbpeNqCEncJLTRjjI</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WakeMap uses your location to show your position on the map and trigger destination alarms while the app is in use.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>WakeMap can continue using location for destination alarm reliability when you allow background access.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>WakeMap can continue using location for destination alarm reliability when you allow background access.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>WakeMap uses the microphone so you can create alarms with your voice.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>WakeMap converts your speech into text to fill alarm details automatically.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

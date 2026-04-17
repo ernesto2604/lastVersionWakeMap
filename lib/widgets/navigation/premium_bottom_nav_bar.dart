@@ -41,7 +41,7 @@ class PremiumBottomNavBar extends StatelessWidget {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final bottomPadding = math.max(10.0, bottomInset * 0.55);
     final resolvedExtraIconColor =
-      extraButtonIconColor ?? theme.colorScheme.onSurface.withValues(alpha: 0.62);
+      extraButtonIconColor ?? theme.colorScheme.onSurface.withValues(alpha: 0.78);
 
     final tabs = items
         .map(
@@ -93,9 +93,9 @@ class PremiumBottomNavBar extends StatelessWidget {
       iconSize: 22,
       showLabel: true,
       selectedIconColor: theme.colorScheme.primary,
-      unselectedIconColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+      unselectedIconColor: theme.colorScheme.onSurface.withValues(alpha: 0.78),
       selectedLabelColor: theme.colorScheme.primary,
-      unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+      unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.78),
       textStyle: theme.textTheme.labelSmall?.copyWith(
         letterSpacing: 0.1,
         height: 1.15,
@@ -104,9 +104,10 @@ class PremiumBottomNavBar extends StatelessWidget {
         thickness: 32,
         blur: 18,
         chromaticAberration: 0.85,
-        lightIntensity: 0.85,
+        lightIntensity: 0.95,
         refractiveIndex: 1.28,
         saturation: 1.1,
+        glassColor: Color(0x2CFFFFFF),
       ),
       indicatorSettings: const LiquidGlassSettings(
         thickness: 18,
@@ -202,7 +203,7 @@ class _SolidBottomNavBar extends StatelessWidget {
                                     size: 22,
                                     color: selected
                                         ? theme.colorScheme.primary
-                                        : theme.colorScheme.onSurface.withValues(alpha: 0.56),
+                                        : theme.colorScheme.onSurface.withValues(alpha: 0.78),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
@@ -212,7 +213,7 @@ class _SolidBottomNavBar extends StatelessWidget {
                                       height: 1.15,
                                       color: selected
                                           ? theme.colorScheme.primary
-                                          : theme.colorScheme.onSurface.withValues(alpha: 0.56),
+                                          : theme.colorScheme.onSurface.withValues(alpha: 0.78),
                                       fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                                     ),
                                   ),

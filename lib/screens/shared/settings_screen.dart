@@ -11,23 +11,12 @@ Future<void> showSettingsBottomSheet(BuildContext context) {
     builder: (sheetContext) {
       final maxHeight = MediaQuery.of(sheetContext).size.height * 0.84;
 
-      return Align(
-        alignment: Alignment.bottomCenter,
-        child: SafeArea(
-          top: false,
-          bottom: false,
-          child: Container(
-            height: maxHeight,
-            clipBehavior: Clip.antiAlias,
-            decoration: const BoxDecoration(
-              color: CupertinoColors.systemGroupedBackground,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: _SettingsScaffold(
-              showNavigationBar: false,
-              onClose: () => Navigator.of(sheetContext).pop(),
-            ),
-          ),
+      return _InteractiveBottomSheetContainer(
+        height: maxHeight,
+        onDismiss: () => Navigator.of(sheetContext).pop(),
+        child: _SettingsScaffold(
+          showNavigationBar: false,
+          onClose: () => Navigator.of(sheetContext).pop(),
         ),
       );
     },
@@ -274,17 +263,17 @@ class _SettingsGlassIconButton extends StatelessWidget {
         thickness: 32,
         blur: 18,
         chromaticAberration: 0.85,
-        lightIntensity: 0.85,
+        lightIntensity: 0.95,
         refractiveIndex: 1.28,
         saturation: 1.1,
-        glassColor: Color(0x3DFFFFFF),
+        glassColor: Color(0x2CFFFFFF),
       ),
-      glowColor: const Color(0x18FFFFFF),
+      glowColor: const Color(0x0EFFFFFF),
       glowRadius: 0.95,
       child: Icon(
         icon,
         size: size * 0.5,
-        color: baseIconColor.withValues(alpha: 0.62),
+        color: baseIconColor.withValues(alpha: 0.78),
       ),
     );
   }
@@ -362,6 +351,100 @@ class _CupertinoSettingsRow extends StatelessWidget {
             ),
             ?trailing,
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InteractiveBottomSheetContainer extends StatefulWidget {
+  const _InteractiveBottomSheetContainer({
+    required this.height,
+    required this.child,
+    required this.onDismiss,
+  });
+
+  final double height;
+  final Widget child;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_InteractiveBottomSheetContainer> createState() =>
+      _InteractiveBottomSheetContainerState();
+}
+
+class _InteractiveBottomSheetContainerState
+    extends State<_InteractiveBottomSheetContainer> {
+  double _sheetOffset = 0;
+  bool _isDragging = false;
+
+  static const double _dismissDistance = 120;
+  static const double _dismissVelocity = 900;
+
+  void _onDragUpdate(DragUpdateDetails details) {
+    final nextOffset =
+        (_sheetOffset + details.delta.dy).clamp(0, double.infinity).toDouble();
+    setState(() {
+      _isDragging = true;
+      _sheetOffset = nextOffset;
+    });
+  }
+
+  void _onDragEnd(DragEndDetails details) {
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldDismiss = _sheetOffset > _dismissDistance ||
+        velocity > _dismissVelocity;
+
+    if (shouldDismiss) {
+      widget.onDismiss();
+      return;
+    }
+
+    setState(() {
+      _isDragging = false;
+      _sheetOffset = 0;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: AnimatedContainer(
+          duration: _isDragging
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          transform: Matrix4.translationValues(0, _sheetOffset, 0),
+          child: Stack(
+            children: [
+              Container(
+                height: widget.height,
+                clipBehavior: Clip.antiAlias,
+                decoration: BoxDecoration(
+                  color: CupertinoTheme.of(context).scaffoldBackgroundColor,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: widget.child,
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onVerticalDragUpdate: _onDragUpdate,
+                    onVerticalDragEnd: _onDragEnd,
+                    child: const SizedBox(width: 180, height: 56),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

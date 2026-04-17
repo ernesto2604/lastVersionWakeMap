@@ -92,7 +92,7 @@ class MapWrapper {
     bool useLiquidGlass = true,
   }) {
     final iconColor = Theme.of(context).colorScheme.onSurface.withValues(
-      alpha: 0.62,
+      alpha: 0.78,
     );
 
     if (!useLiquidGlass) {
@@ -143,12 +143,12 @@ class MapWrapper {
             thickness: 32,
             blur: 18,
             chromaticAberration: 0.85,
-            lightIntensity: 0.85,
+            lightIntensity: 0.95,
             refractiveIndex: 1.28,
             saturation: 1.1,
-            glassColor: Color(0x3DFFFFFF),
+            glassColor: Color(0x2CFFFFFF),
           ),
-          glowColor: const Color(0x18FFFFFF),
+          glowColor: const Color(0x0EFFFFFF),
           glowRadius: 0.95,
           child: Icon(
             icon,

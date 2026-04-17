@@ -3,14 +3,17 @@ import 'package:flutter/material.dart';
 import 'app_typography.dart';
 
 class AppTheme {
-  static const Color _primaryColor = Color(0xFF0D9488); // Teal 600
-  static const Color _secondaryColor = Color(0xFF6366F1); // Indigo 500
+  static const Color _primaryColor = Color(0xFF2F343B);
+  static const Color _secondaryColor = Color(0xFF5E6670);
+  static const Color _appBackgroundColor = Color(0xFFDDE1E6);
 
   static ThemeData get lightTheme {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: _primaryColor,
       secondary: _secondaryColor,
       brightness: Brightness.light,
+    ).copyWith(
+      surface: _appBackgroundColor,
     );
 
     final textTheme = AppTypography.textTheme(colorScheme);
@@ -18,7 +21,7 @@ class AppTheme {
     final cupertinoTheme = CupertinoThemeData(
       brightness: Brightness.light,
       primaryColor: _primaryColor,
-      scaffoldBackgroundColor: Color(0xFFF4F5F7),
+      scaffoldBackgroundColor: _appBackgroundColor,
       barBackgroundColor: Color(0xF2FFFFFF),
       textTheme: AppTypography.cupertinoTextTheme(
         primaryColor: _primaryColor,
@@ -35,6 +38,10 @@ class AppTheme {
       cupertinoOverrideTheme: cupertinoTheme,
       scaffoldBackgroundColor: cupertinoTheme.scaffoldBackgroundColor,
       canvasColor: cupertinoTheme.scaffoldBackgroundColor,
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: _appBackgroundColor,
+        modalBackgroundColor: _appBackgroundColor,
+      ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CupertinoPageTransitionsBuilder(),
