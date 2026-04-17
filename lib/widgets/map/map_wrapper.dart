@@ -90,8 +90,10 @@ class MapWrapper {
     String? tooltip,
     double size = 48,
     bool useLiquidGlass = true,
+    Color? iconColor,
   }) {
-    final iconColor = Theme.of(context).colorScheme.onSurface.withValues(
+    final resolvedIconColor = iconColor ??
+        Theme.of(context).colorScheme.onSurface.withValues(
       alpha: 0.78,
     );
 
@@ -120,7 +122,7 @@ class MapWrapper {
             ),
             child: IconButton(
               onPressed: onPressed,
-              icon: Icon(icon, color: iconColor, size: 22),
+              icon: Icon(icon, color: resolvedIconColor, size: 22),
               splashRadius: size * 0.45,
               tooltip: tooltip,
             ),
@@ -152,7 +154,7 @@ class MapWrapper {
           glowRadius: 0.95,
           child: Icon(
             icon,
-            color: iconColor,
+            color: resolvedIconColor,
             size: 22,
           ),
         ),

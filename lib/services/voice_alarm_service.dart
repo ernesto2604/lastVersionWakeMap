@@ -33,7 +33,7 @@ class VoiceAlarmService {
 
   Future<String?> listenOnce({
     String localeId = 'en_US',
-    Duration listenFor = const Duration(seconds: 8),
+    Duration listenFor = const Duration(minutes: 2),
     Duration pauseFor = const Duration(seconds: 2),
     void Function(String transcript)? onTranscriptChanged,
   }) async {

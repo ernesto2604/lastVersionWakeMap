@@ -11,7 +11,9 @@ import '../shared/alarm_detail_screen.dart';
 import '../shared/create_alarm_screen.dart';
 
 class TravellerAlarmsScreen extends StatefulWidget {
-  const TravellerAlarmsScreen({super.key});
+  const TravellerAlarmsScreen({super.key, required this.isActiveTab});
+
+  final bool isActiveTab;
 
   @override
   State<TravellerAlarmsScreen> createState() => _TravellerAlarmsScreenState();
@@ -21,16 +23,26 @@ class _TravellerAlarmsScreenState extends State<TravellerAlarmsScreen> {
   bool _isEditing = false;
 
   @override
+  void didUpdateWidget(covariant TravellerAlarmsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.isActiveTab && _isEditing) {
+      setState(() => _isEditing = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Consumer<AppStateProvider>(
       builder: (context, appState, _) {
+        final hasAlarms = appState.alarms.isNotEmpty;
+        final canEdit = hasAlarms;
         final topControlsOffset = MediaQuery.of(context).padding.top + 8;
 
         return Scaffold(
           body: Stack(
             children: [
               Positioned.fill(
-                child: appState.alarms.isEmpty
+                child: !hasAlarms
                     ? const EmptyStateWidget(
                         icon: Icons.alarm_off_outlined,
                         title: 'No alarms yet',
@@ -107,7 +119,9 @@ class _TravellerAlarmsScreenState extends State<TravellerAlarmsScreen> {
                 left: 12,
                 child: MapWrapper.overlay(
                   GestureDetector(
-                    onTap: () => setState(() => _isEditing = !_isEditing),
+                    onTap: canEdit
+                      ? () => setState(() => _isEditing = !_isEditing)
+                      : null,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(999),
                       child: BackdropFilter(
@@ -139,7 +153,9 @@ class _TravellerAlarmsScreenState extends State<TravellerAlarmsScreen> {
                                   fontWeight: FontWeight.w500,
                                   color: Theme.of(
                                     context,
-                                  ).colorScheme.onSurface.withValues(alpha: 0.86),
+                                  ).colorScheme.onSurface.withValues(
+                                        alpha: canEdit ? 0.86 : 0.35,
+                                      ),
                                 ),
                           ),
                         ),

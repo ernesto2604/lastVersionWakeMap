@@ -24,6 +24,7 @@ class PremiumBottomNavBar extends StatelessWidget {
     this.extraButtonLabel = 'Voice',
     this.extraButtonIconColor,
     this.forceSolidStyle = false,
+    this.preferLightForeground = false,
   });
 
   final int currentIndex;
@@ -34,14 +35,21 @@ class PremiumBottomNavBar extends StatelessWidget {
   final String extraButtonLabel;
   final Color? extraButtonIconColor;
   final bool forceSolidStyle;
+  final bool preferLightForeground;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final bottomPadding = math.max(10.0, bottomInset * 0.55);
+    final baseForeground = preferLightForeground
+        ? Colors.white
+        : theme.colorScheme.onSurface;
+    final selectedForeground = preferLightForeground
+        ? Colors.white
+        : theme.colorScheme.primary;
     final resolvedExtraIconColor =
-      extraButtonIconColor ?? theme.colorScheme.onSurface.withValues(alpha: 0.78);
+      extraButtonIconColor ?? baseForeground.withValues(alpha: 0.88);
 
     final tabs = items
         .map(
@@ -92,10 +100,10 @@ class PremiumBottomNavBar extends StatelessWidget {
       showIndicator: true,
       iconSize: 22,
       showLabel: true,
-      selectedIconColor: theme.colorScheme.primary,
-      unselectedIconColor: theme.colorScheme.onSurface.withValues(alpha: 0.78),
-      selectedLabelColor: theme.colorScheme.primary,
-      unselectedLabelColor: theme.colorScheme.onSurface.withValues(alpha: 0.78),
+      selectedIconColor: selectedForeground,
+      unselectedIconColor: baseForeground.withValues(alpha: 0.78),
+      selectedLabelColor: selectedForeground,
+      unselectedLabelColor: baseForeground.withValues(alpha: 0.78),
       textStyle: theme.textTheme.labelSmall?.copyWith(
         letterSpacing: 0.1,
         height: 1.15,
@@ -116,7 +124,10 @@ class PremiumBottomNavBar extends StatelessWidget {
         lightIntensity: 1.6,
         refractiveIndex: 1.12,
       ),
-      indicatorColor: theme.colorScheme.primary.withValues(alpha: 0.18),
+      indicatorColor: (preferLightForeground
+              ? Colors.white
+              : theme.colorScheme.primary)
+          .withValues(alpha: 0.18),
     );
   }
 }

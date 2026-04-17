@@ -178,7 +178,7 @@ class _TravellerShellState extends State<TravellerShell> {
                       ? const TravellerGuideScreen()
                       : const SizedBox.shrink(),
                   _initializedTabs.contains(2)
-                      ? const TravellerAlarmsScreen()
+                      ? TravellerAlarmsScreen(isActiveTab: tabIndex == 2)
                       : const SizedBox.shrink(),
                 ],
               ),
@@ -223,6 +223,7 @@ class _TravellerShellState extends State<TravellerShell> {
             extraButtonIconColor: _isCapturingVoice
               ? CupertinoColors.systemRed
               : null,
+            preferLightForeground: tabIndex == 0,
             items: const [
               PremiumBottomNavItem(
                 icon: CupertinoIcons.map,

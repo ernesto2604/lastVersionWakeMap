@@ -539,6 +539,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                   onPressed: () => showSettingsBottomSheet(context),
                   icon: CupertinoIcons.settings,
                   tooltip: 'Settings',
+                  iconColor: CupertinoColors.white,
                 ),
               ),
 
@@ -612,6 +613,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                     icon: CupertinoIcons.location_fill,
                     tooltip: 'Recenter',
                     size: 44,
+                    iconColor: CupertinoColors.white,
                   ),
                 ),
             ],

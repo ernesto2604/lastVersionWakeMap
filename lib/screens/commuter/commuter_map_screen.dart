@@ -495,6 +495,7 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                   onPressed: () => showSettingsBottomSheet(context),
                   icon: CupertinoIcons.settings,
                   tooltip: 'Settings',
+                  iconColor: CupertinoColors.white,
                 ),
               ),
 
@@ -508,6 +509,7 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                     icon: CupertinoIcons.location_fill,
                     tooltip: 'Recenter',
                     size: 44,
+                    iconColor: CupertinoColors.white,
                   ),
                 ),
             ],

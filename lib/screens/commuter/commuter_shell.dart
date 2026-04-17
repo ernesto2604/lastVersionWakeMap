@@ -172,7 +172,7 @@ class _CommuterShellState extends State<CommuterShell> {
                 children: [
                   // Tab 0: Alarms — always created (initialized in set)
                   _initializedTabs.contains(0)
-                      ? const CommuterAlarmsScreen()
+                      ? CommuterAlarmsScreen(isActiveTab: tabIndex == 0)
                       : const SizedBox.shrink(),
                   // Tab 1: Map — created on first visit, kept alive by IndexedStack
                   _initializedTabs.contains(1)
@@ -221,6 +221,7 @@ class _CommuterShellState extends State<CommuterShell> {
             extraButtonIconColor: _isCapturingVoice
               ? CupertinoColors.systemRed
               : null,
+            preferLightForeground: tabIndex == 1,
             items: const [
               PremiumBottomNavItem(
                 icon: CupertinoIcons.alarm,
