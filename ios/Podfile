@@ -1,6 +1,11 @@
 # Uncomment this line to define a global platform for your project.
 platform :ios, '14.0'
 
+# Required by speech_to_text transitive Swift pods (CwlCatchException*).
+# Builder installs pods as static libraries; modular headers ensure module maps
+# are generated so Swift pods can be imported correctly.
+use_modular_headers!
+
 # CocoaPods analytics sends network stats synchronously affecting Flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 
