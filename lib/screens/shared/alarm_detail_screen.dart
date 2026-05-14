@@ -5,7 +5,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_liquid_glass_plus/flutter_liquid_glass.dart';
 import 'package:flutter_liquid_glass_plus/buttons/liquid_glass_switch.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/alarm_model.dart';
@@ -45,10 +46,11 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   final _placesService = PlacesService();
   late TextEditingController _nameController;
   late TextEditingController _locationController;
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   late LatLng _selectedLocation;
   late double _radius;
   late bool _isActive;
+  bool _isMapReady = false;
   bool _submitted = false;
   bool _isLoadingSuggestions = false;
   bool _isApplyingSuggestion = false;
@@ -158,7 +160,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
 
     final point = LatLng(coordinates.latitude, coordinates.longitude);
     setState(() => _selectedLocation = point);
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(point, 15));
+    _moveMap(point, 15);
   }
 
   Future<bool> _resolveLocationFromInput() async {
@@ -213,8 +215,13 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
       _autocompleteInfoMessage = null;
       _locationNeedsResolve = false;
     });
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(point, 15));
+    _moveMap(point, 15);
     return true;
+  }
+
+  void _moveMap(LatLng point, double zoom) {
+    if (!_isMapReady) return;
+    _mapController.move(point, zoom);
   }
 
   Future<void> _saveChanges() async {
@@ -519,33 +526,59 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
                 ),
 
                 Expanded(
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: _selectedLocation,
-                      zoom: 15,
-                    ),
-                    onMapCreated: (controller) => _mapController = controller,
-                    markers: {
-                      Marker(markerId: const MarkerId('alarm'), position: _selectedLocation),
-                    },
-                    circles: {
-                      Circle(
-                        circleId: const CircleId('radius'),
-                        center: _selectedLocation,
-                        radius: _radius,
-                        fillColor: theme.colorScheme.primary.withValues(alpha: 0.15),
-                        strokeColor: theme.colorScheme.primary.withValues(alpha: 0.5),
-                        strokeWidth: 2,
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: _selectedLocation,
+                      initialZoom: 15,
+                      interactionOptions: const InteractionOptions(
+                        flags: InteractiveFlag.none,
                       ),
-                    },
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                    compassEnabled: false,
-                    scrollGesturesEnabled: false,
-                    rotateGesturesEnabled: false,
-                    tiltGesturesEnabled: false,
-                    myLocationButtonEnabled: false,
-                    liteModeEnabled: MapWrapper.liteModeEnabled,
+                      onMapReady: () {
+                        _isMapReady = true;
+                        _moveMap(_selectedLocation, 15);
+                      },
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.wakemap.wakeMap',
+                      ),
+                      CircleLayer(
+                        circles: [
+                          CircleMarker(
+                            point: _selectedLocation,
+                            radius: _radius,
+                            useRadiusInMeter: true,
+                            color:
+                                theme.colorScheme.primary.withValues(alpha: 0.15),
+                            borderColor:
+                                theme.colorScheme.primary.withValues(alpha: 0.5),
+                            borderStrokeWidth: 2,
+                          ),
+                        ],
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _selectedLocation,
+                            width: 44,
+                            height: 44,
+                            child: Icon(
+                              CupertinoIcons.location_solid,
+                              color: theme.colorScheme.primary,
+                              size: 38,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const RichAttributionWidget(
+                        attributions: [
+                          TextSourceAttribution('OpenStreetMap contributors'),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
 

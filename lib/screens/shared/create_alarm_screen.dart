@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../providers/app_state_provider.dart';
@@ -44,9 +45,11 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
   final _placesService = PlacesService();
 
   LatLng? _selectedLocation;
+  LatLng? _currentLocation;
   double _radius = 500;
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   LatLng _initialCenter = const LatLng(51.5074, -0.1278); // London default
+  bool _isMapReady = false;
   bool _loadingLocation = true;
   bool _canShowMyLocation = false;
   bool _submitted = false;
@@ -168,7 +171,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
       _selectedLocation = point;
       _initialCenter = point;
     });
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(point, 14));
+    _moveMap(point, 14);
   }
 
   Future<bool> _resolveLocationFromInput() async {
@@ -224,7 +227,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
       _autocompleteInfoMessage = null;
       _locationNeedsResolve = false;
     });
-    _mapController?.animateCamera(CameraUpdate.newLatLngZoom(point, 14));
+    _moveMap(point, 14);
     return true;
   }
 
@@ -236,24 +239,22 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     if (position != null && mounted) {
       setState(() {
         _initialCenter = LatLng(position.latitude, position.longitude);
+        _currentLocation = _initialCenter;
         _canShowMyLocation = true;
         _loadingLocation = false;
       });
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngZoom(_initialCenter, 14),
-      );
+      _moveMap(_initialCenter, 14);
     } else {
       // Fall back to fetching via the shared service
       final fetched = await appState.locationService.getCurrentPosition();
       if (fetched != null && mounted) {
         setState(() {
           _initialCenter = LatLng(fetched.latitude, fetched.longitude);
+          _currentLocation = _initialCenter;
           _canShowMyLocation = true;
           _loadingLocation = false;
         });
-        _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(_initialCenter, 14),
-        );
+        _moveMap(_initialCenter, 14);
       } else if (mounted) {
         setState(() => _loadingLocation = false);
       }
@@ -283,29 +284,71 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     });
   }
 
-  Set<Marker> _buildMarkers() {
-    if (_selectedLocation == null) return {};
-    return {
-      Marker(
-        markerId: const MarkerId('selected'),
-        position: _selectedLocation!,
-        infoWindow: const InfoWindow(title: 'Alarm Location'),
-      ),
-    };
+  void _moveMap(LatLng point, double zoom) {
+    if (!_isMapReady) return;
+    _mapController.move(point, zoom);
   }
 
-  Set<Circle> _buildCircles() {
-    if (_selectedLocation == null) return {};
-    return {
-      Circle(
-        circleId: const CircleId('radius'),
-        center: _selectedLocation!,
-        radius: _radius,
-        fillColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-        strokeColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
-        strokeWidth: 2,
+  List<Marker> _buildMarkers() {
+    final markers = <Marker>[];
+    if (_canShowMyLocation && _currentLocation != null) {
+      markers.add(_currentLocationMarker(_currentLocation!));
+    }
+    if (_selectedLocation == null) return markers;
+    markers.add(
+      Marker(
+        point: _selectedLocation!,
+        width: 44,
+        height: 44,
+        child: Icon(
+          CupertinoIcons.location_solid,
+          color: Theme.of(context).colorScheme.primary,
+          size: 38,
+        ),
       ),
-    };
+    );
+    return markers;
+  }
+
+  Marker _currentLocationMarker(LatLng point) {
+    final color = CupertinoTheme.of(context).primaryColor;
+    return Marker(
+      point: point,
+      width: 26,
+      height: 26,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.18),
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<CircleMarker> _buildCircles() {
+    if (_selectedLocation == null) return const [];
+    return [
+      CircleMarker(
+        point: _selectedLocation!,
+        radius: _radius,
+        useRadiusInMeter: true,
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+        borderColor:
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+        borderStrokeWidth: 2,
+      ),
+    ];
   }
 
   Future<void> _saveAlarm() async {
@@ -576,20 +619,33 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                 Expanded(
                   child: Stack(
                     children: [
-                      GoogleMap(
-                        initialCameraPosition: CameraPosition(
-                          target: _initialCenter,
-                          zoom: 14,
+                      FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: _initialCenter,
+                          initialZoom: 14,
+                          onMapReady: () {
+                            _isMapReady = true;
+                            _moveMap(_initialCenter, 14);
+                          },
+                          onTap: (_, point) => _onMapTap(point),
                         ),
-                        onMapCreated: (controller) => _mapController = controller,
-                        onTap: _onMapTap,
-                        markers: _buildMarkers(),
-                        circles: _buildCircles(),
-                        myLocationEnabled: _canShowMyLocation,
-                        myLocationButtonEnabled: false,
-                        zoomControlsEnabled: false,
-                        mapToolbarEnabled: false,
-                        compassEnabled: false,
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.wakemap.wakeMap',
+                          ),
+                          CircleLayer(circles: _buildCircles()),
+                          MarkerLayer(markers: _buildMarkers()),
+                          const RichAttributionWidget(
+                            attributions: [
+                              TextSourceAttribution(
+                                'OpenStreetMap contributors',
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       if (_loadingLocation)
                         Positioned.fill(

@@ -44,8 +44,6 @@
 			</dict>
 		</dict>
 	</dict>
-	<key>GMSApiKey</key>
-	<string>AIzaSyCGo89ToPeDSy-QOzmbpeNqCEncJLTRjjI</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>WakeMap uses your location to show your position on the map and trigger destination alarms while the app is in use.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>

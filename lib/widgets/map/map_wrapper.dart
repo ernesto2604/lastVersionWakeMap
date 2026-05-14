@@ -2,51 +2,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_liquid_glass_plus/flutter_liquid_glass.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pointer_interceptor/pointer_interceptor.dart';
-import 'map_style_config.dart';
 
 /// Web-safe map helpers shared across screens.
 class MapWrapper {
   const MapWrapper._();
-
-  /// Optional cloud map id reserved for future rollout.
-  static const String _definedCloudMapId = String.fromEnvironment(
-    'GOOGLE_MAP_CLOUD_MAP_ID',
-  );
-
-  static String? get cloudMapId {
-    final value = _definedCloudMapId.trim();
-    return value.isEmpty ? null : value;
-  }
-
-  /// `defaultMarkerWithHue` is not available on web.
-  static BitmapDescriptor markerWithHue(double hue) {
-    if (kIsWeb) return BitmapDescriptor.defaultMarker;
-    return BitmapDescriptor.defaultMarkerWithHue(hue);
-  }
-
-  /// Google Maps lite mode is Android-only.
-  static bool get liteModeEnabled => !kIsWeb;
-
-  static String styleFor(Brightness brightness) {
-    return brightness == Brightness.dark
-        ? MapStyleConfig.dark
-        : MapStyleConfig.light;
-  }
-
-  static Future<void> applyThemeStyle({
-    required GoogleMapController controller,
-    required Brightness brightness,
-  }) async {
-    try {
-      // ignore: deprecated_member_use
-      await controller.setMapStyle(styleFor(brightness));
-    } catch (error) {
-      // Styling should never block map usage if unsupported on a platform.
-      debugPrint('[MapStyle] Unable to apply style: $error');
-    }
-  }
 
   /// Keep overlay controls clickable above web maps rendered via HtmlElementView.
   static Widget overlay(Widget child) {

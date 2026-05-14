@@ -3,7 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/location_service.dart';
@@ -26,7 +27,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   /// services disabled, or error). London city center.
   static const LatLng _fallbackLocation = LatLng(51.5074, -0.1278);
 
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   StreamSubscription? _mapFollowSub;
   late final AppStateProvider _appState;
 
@@ -39,7 +40,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   /// True when startup camera had to use fallback (permission/services/error).
   bool _usedFallbackInitialPosition = false;
 
-  /// Enables GoogleMap location layer only after permission is confirmed.
+  /// Enables the current-location marker only after permission is confirmed.
   bool _canShowMyLocation = false;
 
   /// Auto-follow is disabled by default; enabled only when alarms are active.
@@ -136,7 +137,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
   /// Zoom to fit all active alarm positions + device location.
   Future<void> _fitBoundsToActiveAlarms() async {
-    if (!_isMapControllerReady || _mapController == null) return;
+    if (!_isMapControllerReady) return;
 
     final activeAlarms = _appState.alarms.where((a) => a.isActive).toList();
     if (activeAlarms.isEmpty) return;
@@ -161,14 +162,17 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     }
 
     final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
+      LatLng(minLat, minLng),
+      LatLng(maxLat, maxLng),
     );
 
     _isProgrammaticCameraMove = true;
     try {
-      await _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 80),
+      _mapController.fitCamera(
+        CameraFit.bounds(
+          bounds: bounds,
+          padding: const EdgeInsets.all(80),
+        ),
       );
       debugPrint('$_mapTag Fitted bounds to active alarms');
     } catch (e) {
@@ -237,8 +241,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     }
   }
 
-  void _onMapCreated(GoogleMapController controller) {
-    _mapController = controller;
+  void _onMapReady() {
     _isMapControllerReady = true;
     debugPrint('$_mapTag Building map with initial device-centered camera');
 
@@ -288,15 +291,13 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   Future<void> _recenterCamera(LatLng target) async {
     _lastFollowedTarget = target;
 
-    if (!_isMapControllerReady || _mapController == null) {
+    if (!_isMapControllerReady) {
       return;
     }
 
     _isProgrammaticCameraMove = true;
     try {
-      await _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(target, 14),
-      );
+      _mapController.move(target, 14);
       debugPrint('$_mapTag Auto-follow recentered camera');
     } catch (e) {
       debugPrint('$_tag Failed to recenter camera: $e');
@@ -326,21 +327,29 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     }
   }
 
-  Set<Marker> _buildMarkers(AppStateProvider appState) {
-    final markers = <Marker>{};
+  List<Marker> _buildMarkers(AppStateProvider appState) {
+    final markers = <Marker>[];
+    final currentLocation = _latestDeviceLocation ?? _initialMapTarget;
+    if (_canShowMyLocation && currentLocation != null) {
+      markers.add(_currentLocationMarker(currentLocation));
+    }
 
     // Alarm markers
     for (final alarm in appState.alarms) {
       if (!alarm.isActive) continue;
       markers.add(
         Marker(
-          markerId: MarkerId('alarm_${alarm.id}'),
-          position: LatLng(alarm.latitude, alarm.longitude),
-          infoWindow: InfoWindow(
-            title: alarm.name,
-            snippet: '${alarm.radiusMeters.round()} m radius',
+          point: LatLng(alarm.latitude, alarm.longitude),
+          width: 44,
+          height: 44,
+          child: Tooltip(
+            message: '${alarm.name}\n${alarm.radiusMeters.round()} m radius',
+            child: Icon(
+              CupertinoIcons.location_solid,
+              color: Theme.of(context).colorScheme.primary,
+              size: 38,
+            ),
           ),
-          icon: MapWrapper.markerWithHue(BitmapDescriptor.hueAzure),
         ),
       );
     }
@@ -352,13 +361,17 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
         final stop = plan.stops[i];
         markers.add(
           Marker(
-            markerId: MarkerId('stop_$i'),
-            position: LatLng(stop.latitude, stop.longitude),
-            infoWindow: InfoWindow(
-              title: '${i + 1}. ${stop.name}',
-              snippet: stop.description,
+            point: LatLng(stop.latitude, stop.longitude),
+            width: 40,
+            height: 40,
+            child: Tooltip(
+              message: '${i + 1}. ${stop.name}\n${stop.description}',
+              child: Icon(
+                CupertinoIcons.flag_fill,
+                color: Theme.of(context).colorScheme.secondary,
+                size: 34,
+              ),
             ),
-            icon: MapWrapper.markerWithHue(BitmapDescriptor.hueOrange),
           ),
         );
       }
@@ -367,39 +380,61 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     return markers;
   }
 
-  Set<Circle> _buildCircles(AppStateProvider appState) {
-    final circles = <Circle>{};
+  Marker _currentLocationMarker(LatLng point) {
+    final color = CupertinoTheme.of(context).primaryColor;
+    return Marker(
+      point: point,
+      width: 26,
+      height: 26,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.18),
+          shape: BoxShape.circle,
+        ),
+        child: Center(
+          child: Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<CircleMarker> _buildCircles(AppStateProvider appState) {
+    final circles = <CircleMarker>[];
     final theme = Theme.of(context);
     for (final alarm in appState.alarms) {
       if (!alarm.isActive) continue;
       circles.add(
-        Circle(
-          circleId: CircleId(alarm.id),
-          center: LatLng(alarm.latitude, alarm.longitude),
+        CircleMarker(
+          point: LatLng(alarm.latitude, alarm.longitude),
           radius: alarm.radiusMeters,
-          fillColor: theme.colorScheme.primary.withValues(alpha: 0.1),
-          strokeColor: theme.colorScheme.primary.withValues(alpha: 0.4),
-          strokeWidth: 1,
+          useRadiusInMeter: true,
+          color: theme.colorScheme.primary.withValues(alpha: 0.1),
+          borderColor: theme.colorScheme.primary.withValues(alpha: 0.4),
+          borderStrokeWidth: 1,
         ),
       );
     }
     return circles;
   }
 
-  Set<Polyline> _buildPolylines(AppStateProvider appState) {
-    final polylines = <Polyline>{};
+  List<Polyline> _buildPolylines(AppStateProvider appState) {
+    final polylines = <Polyline>[];
 
     // 1. Draw alarm route if available
     if (_alarmRoute != null && _alarmRoute!.isNotEmpty) {
       polylines.add(
         Polyline(
-          polylineId: const PolylineId('alarm_route'),
           points: _alarmRoute!,
           color: Theme.of(context).colorScheme.primary,
-          width: 6,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
+          strokeWidth: 6,
         ),
       );
     }
@@ -413,13 +448,9 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
 
       polylines.add(
         Polyline(
-          polylineId: const PolylineId('plan_route'),
           points: points,
           color: Theme.of(context).colorScheme.secondary,
-          width: 6,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
+          strokeWidth: 6,
         ),
       );
     }
@@ -447,20 +478,31 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
               Positioned.fill(
                 child: MapWrapper.withLayoutDiagnostics(
                   tag: 'traveller_main_map',
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: initialTarget,
-                      zoom: 14,
+                  child: FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: initialTarget,
+                      initialZoom: 14,
+                      onMapReady: _onMapReady,
+                      onPositionChanged: (_, hasGesture) {
+                        if (hasGesture) _onCameraMoveStarted();
+                      },
                     ),
-                    onMapCreated: _onMapCreated,
-                    onCameraMoveStarted: _onCameraMoveStarted,
-                    markers: _buildMarkers(appState),
-                    circles: _buildCircles(appState),
-                    polylines: _buildPolylines(appState),
-                    compassEnabled: false,
-                    myLocationEnabled: _canShowMyLocation,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.wakemap.wakeMap',
+                      ),
+                      CircleLayer(circles: _buildCircles(appState)),
+                      PolylineLayer(polylines: _buildPolylines(appState)),
+                      MarkerLayer(markers: _buildMarkers(appState)),
+                      const RichAttributionWidget(
+                        attributions: [
+                          TextSourceAttribution('OpenStreetMap contributors'),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ),

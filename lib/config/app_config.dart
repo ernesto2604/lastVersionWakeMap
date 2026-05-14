@@ -4,16 +4,8 @@ class AppConfig {
   static const String _definedApiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
   );
-  static const String _definedGoogleMapsApiKey = String.fromEnvironment(
-    'GOOGLE_MAPS_API_KEY',
-  );
   static const String _fallbackProductionApiBaseUrl =
       'https://lastversionwakemap.onrender.com';
-
-  // Fallback key used by current local builds. Restrict this key by package
-  // name / bundle id and API scope in Google Cloud Console.
-  static const String _fallbackGoogleMapsApiKey =
-      'AIzaSyCGo89ToPeDSy-QOzmbpeNqCEncJLTRjjI';
 
   /// Non-secret backend URL used by the client to reach the guide proxy API.
   static String get apiBaseUrl {
@@ -37,11 +29,5 @@ class AppConfig {
       case TargetPlatform.fuchsia:
         return 'http://localhost:8080';
     }
-  }
-
-  static String get googleMapsApiKey {
-    final configured = _definedGoogleMapsApiKey.trim();
-    if (configured.isNotEmpty) return configured;
-    return _fallbackGoogleMapsApiKey;
   }
 }

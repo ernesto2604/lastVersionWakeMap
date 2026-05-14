@@ -2,8 +2,6 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../config/app_config.dart';
-
 class PlaceSuggestion {
   const PlaceSuggestion({
     required this.placeId,
@@ -40,7 +38,7 @@ class PlacesService {
   PlacesService({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
-  static const String _placesHost = 'places.googleapis.com';
+  static const String _placesHost = 'nominatim.openstreetmap.org';
 
   Future<List<PlaceSuggestion>> autocomplete({
     required String query,
@@ -65,21 +63,19 @@ class PlacesService {
       );
     }
 
-    final uri = Uri.https(_placesHost, '/v1/places:autocomplete');
+    final uri = Uri.https(_placesHost, '/search', {
+      'q': trimmed,
+      'format': 'jsonv2',
+      'addressdetails': '1',
+      'limit': '6',
+      'accept-language': 'es',
+    });
 
-    final response = await _client.post(
+    final response = await _client.get(
       uri,
       headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': AppConfig.googleMapsApiKey,
-        'X-Goog-FieldMask':
-            'suggestions.placePrediction.placeId,suggestions.placePrediction.text.text',
+        'User-Agent': 'WakeMap/1.0 (OpenStreetMap flutter_map client)',
       },
-      body: jsonEncode({
-        'input': trimmed,
-        'sessionToken': sessionToken,
-        'languageCode': 'es',
-      }),
     );
 
     if (response.statusCode != 200) {
@@ -102,8 +98,7 @@ class PlacesService {
       );
     }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final rawSuggestions = body['suggestions'] as List<dynamic>? ?? const [];
+    final rawSuggestions = jsonDecode(response.body) as List<dynamic>? ?? const [];
     if (rawSuggestions.isEmpty) {
       return const PlacesAutocompleteResult(
         suggestions: [],
@@ -113,13 +108,11 @@ class PlacesService {
 
     final suggestions = rawSuggestions
         .map((item) => item as Map<String, dynamic>)
-        .map((entry) => entry['placePrediction'] as Map<String, dynamic>?)
-        .whereType<Map<String, dynamic>>()
         .map(
           (map) => PlaceSuggestion(
-            placeId: map['placeId'] as String? ?? '',
+            placeId: '${map['lat'] ?? ''},${map['lon'] ?? ''}',
             description:
-                (map['text'] as Map<String, dynamic>?)?['text'] as String? ?? '',
+                map['display_name'] as String? ?? map['name'] as String? ?? '',
           ),
         )
         .where((s) => s.placeId.isNotEmpty && s.description.isNotEmpty)
@@ -137,22 +130,11 @@ class PlacesService {
   }) async {
     if (placeId.isEmpty) return null;
 
-    final uri = Uri.https(_placesHost, '/v1/places/$placeId');
+    final parts = placeId.split(',');
+    if (parts.length != 2) return null;
 
-    final response = await _client.get(
-      uri,
-      headers: {
-        'X-Goog-Api-Key': AppConfig.googleMapsApiKey,
-        'X-Goog-FieldMask': 'location',
-      },
-    );
-
-    if (response.statusCode != 200) return null;
-
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    final location = body['location'] as Map<String, dynamic>?;
-    final lat = ((location?['latitude'] ?? location?['lat']) as num?)?.toDouble();
-    final lng = ((location?['longitude'] ?? location?['lng']) as num?)?.toDouble();
+    final lat = double.tryParse(parts[0]);
+    final lng = double.tryParse(parts[1]);
     if (lat == null || lng == null) return null;
 
     return PlaceCoordinates(latitude: lat, longitude: lng);

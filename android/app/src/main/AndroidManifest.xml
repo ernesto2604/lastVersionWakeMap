@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Background location (for future background alarm checking) -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
-    <!-- Internet for Google Maps tiles -->
+    <!-- Internet for OpenStreetMap tiles, routing, and search -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
@@ -13,11 +13,6 @@
         android:label="WakeMap"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-
-        <!-- Google Maps API Key — INSERT YOUR KEY BELOW -->
-        <meta-data
-            android:name="com.google.android.geo.API_KEY"
-            android:value="AIzaSyCGo89ToPeDSy-QOzmbpeNqCEncJLTRjjI" />
 
         <activity
             android:name=".MainActivity"
