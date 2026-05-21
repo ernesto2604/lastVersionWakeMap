@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 class VoiceCaptureException implements Exception {
@@ -32,9 +33,17 @@ class VoiceAlarmService {
     : _speech = speech ?? SpeechToText();
 
   final SpeechToText _speech;
-  static const Duration defaultListenFor = Duration(seconds: 5);
-  static const Duration defaultPauseFor = Duration(milliseconds: 1300);
+  static const Duration defaultListenFor = Duration(seconds: 12);
+  static const Duration defaultPauseFor = Duration(milliseconds: 2800);
   static const List<String> _supportedLocales = ['en_GB', 'es_ES'];
+  static const Duration _finalResultGrace = Duration(milliseconds: 700);
+  static const Duration _silentFinishGrace = Duration(milliseconds: 250);
+  static const Duration _hardTimeoutPadding = Duration(milliseconds: 750);
+
+  Completer<String?>? _activeCompleter;
+  Timer? _finishTimer;
+  String _heard = '';
+  bool _isFinishing = false;
 
   Future<String?> listenOnce({
     String? localeId,
@@ -44,7 +53,10 @@ class VoiceAlarmService {
   }) async {
     bool available;
     try {
-      available = await _speech.initialize();
+      available = await _speech.initialize(
+        onStatus: _handleSpeechStatus,
+        onError: _handleSpeechError,
+      );
     } on MissingPluginException {
       throw const VoiceCaptureException(
         'Voice plugin not loaded. Fully restart the app (stop and run again).',
@@ -63,21 +75,10 @@ class VoiceAlarmService {
 
     final resolvedLocaleId = await _resolveLocale(localeId);
     final completer = Completer<String?>();
-    String heard = '';
-
-    Future<void> finish({bool cancelIfSilent = false}) async {
-      if (_speech.isListening) {
-        if (cancelIfSilent && heard.trim().isEmpty) {
-          await _speech.cancel();
-        } else {
-          await _speech.stop();
-        }
-      }
-      if (!completer.isCompleted) {
-        final text = heard.trim();
-        completer.complete(text.isEmpty ? null : text);
-      }
-    }
+    _activeCompleter = completer;
+    _heard = '';
+    _isFinishing = false;
+    _finishTimer?.cancel();
 
     try {
       await _speech.listen(
@@ -87,31 +88,50 @@ class VoiceAlarmService {
         listenOptions: SpeechListenOptions(
           partialResults: true,
           cancelOnError: true,
-          listenMode: ListenMode.confirmation,
+          listenMode: ListenMode.dictation,
+          autoPunctuation: true,
         ),
         onResult: (result) {
-          heard = result.recognizedWords;
-          onTranscriptChanged?.call(heard.trim());
+          _heard = _moreCompleteTranscript(
+            current: _heard,
+            incoming: result.recognizedWords,
+            isFinal: result.finalResult,
+          );
+          onTranscriptChanged?.call(_heard.trim());
           if (result.finalResult) {
-            finish();
+            _scheduleFinish(_finalResultGrace);
           }
         },
         onSoundLevelChange: (_) {},
       );
     } on PlatformException catch (e) {
+      _activeCompleter = null;
+      _heard = '';
+      _isFinishing = false;
+      _finishTimer?.cancel();
+      _finishTimer = null;
       throw VoiceCaptureException(
         e.message ?? 'Voice capture failed while listening.',
       );
     }
 
     Future<void>.delayed(
-      listenFor + const Duration(milliseconds: 250),
-      () => finish(cancelIfSilent: true),
+      listenFor + _hardTimeoutPadding,
+      () => _finishActiveCapture(cancelIfSilent: true),
     );
     return completer.future;
   }
 
   Future<void> cancel() async {
+    _finishTimer?.cancel();
+    _finishTimer = null;
+    final completer = _activeCompleter;
+    _activeCompleter = null;
+    _heard = '';
+    _isFinishing = false;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(null);
+    }
     if (_speech.isListening) {
       await _speech.cancel();
     }
@@ -351,6 +371,122 @@ class VoiceAlarmService {
     throw const VoiceCaptureException(
       'Voice input supports only UK English and Spain Spanish on this device.',
     );
+  }
+
+  void _handleSpeechStatus(String status) {
+    final completer = _activeCompleter;
+    if (completer == null || completer.isCompleted) return;
+
+    if (status == SpeechToText.doneStatus ||
+        status == SpeechToText.notListeningStatus) {
+      final heardSpeech = _heard.trim().isNotEmpty;
+      _scheduleFinish(
+        heardSpeech ? _finalResultGrace : _silentFinishGrace,
+        cancelIfSilent: !heardSpeech,
+      );
+    }
+  }
+
+  void _handleSpeechError(SpeechRecognitionError error) {
+    final completer = _activeCompleter;
+    if (completer == null || completer.isCompleted) return;
+
+    if (_heard.trim().isNotEmpty) {
+      _scheduleFinish(_finalResultGrace);
+      return;
+    }
+
+    if (_isNoSpeechError(error.errorMsg)) {
+      _scheduleFinish(_silentFinishGrace, cancelIfSilent: true);
+      return;
+    }
+
+    _finishTimer?.cancel();
+    _finishTimer = null;
+    _activeCompleter = null;
+    _heard = '';
+    _isFinishing = false;
+    if (_speech.isListening) {
+      unawaited(_speech.cancel());
+    }
+    completer.completeError(
+      const VoiceCaptureException(
+        'Voice capture stopped unexpectedly. Please try again.',
+      ),
+    );
+  }
+
+  bool _isNoSpeechError(String errorMsg) {
+    final normalized = errorMsg.toLowerCase();
+    return normalized.contains('no_match') ||
+        normalized.contains('speech_timeout') ||
+        normalized.contains('no speech') ||
+        normalized.contains('timeout');
+  }
+
+  void _scheduleFinish(Duration delay, {bool cancelIfSilent = false}) {
+    final completer = _activeCompleter;
+    if (completer == null || completer.isCompleted) return;
+
+    _finishTimer?.cancel();
+    _finishTimer = Timer(
+      delay,
+      () => unawaited(_finishActiveCapture(cancelIfSilent: cancelIfSilent)),
+    );
+  }
+
+  Future<void> _finishActiveCapture({bool cancelIfSilent = false}) async {
+    final completer = _activeCompleter;
+    if (completer == null || completer.isCompleted || _isFinishing) return;
+
+    _isFinishing = true;
+    _finishTimer?.cancel();
+    _finishTimer = null;
+
+    if (_speech.isListening) {
+      if (cancelIfSilent && _heard.trim().isEmpty) {
+        await _speech.cancel();
+      } else {
+        await _speech.stop();
+      }
+    }
+
+    final text = _heard.trim();
+    if (!completer.isCompleted) {
+      completer.complete(text.isEmpty ? null : text);
+    }
+
+    _activeCompleter = null;
+    _heard = '';
+    _isFinishing = false;
+  }
+
+  String _moreCompleteTranscript({
+    required String current,
+    required String incoming,
+    required bool isFinal,
+  }) {
+    final currentText = _normalizeSpaces(current);
+    final incomingText = _normalizeSpaces(incoming);
+    if (incomingText.isEmpty) return currentText;
+    if (currentText.isEmpty) return incomingText;
+    if (incomingText == currentText) return incomingText;
+
+    final currentLower = currentText.toLowerCase();
+    final incomingLower = incomingText.toLowerCase();
+    if (incomingLower.contains(currentLower)) return incomingText;
+    if (currentLower.contains(incomingLower)) {
+      final keepsMostWords = incomingText.length >= currentText.length * 0.95;
+      return isFinal && keepsMostWords ? incomingText : currentText;
+    }
+
+    if (isFinal && incomingText.length >= currentText.length * 0.75) {
+      return incomingText;
+    }
+
+    return incomingText.length > currentText.length
+        ? incomingText
+        : currentText;
   }
 
   String _cleanLocation(String input) {
