@@ -66,12 +66,23 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   /// Latest device location received from map follow stream.
   LatLng? _latestDeviceLocation;
 
+  /// Road/path-following route geometry for the current guide plan.
+  List<LatLng>? _planRoute;
+  String? _planRouteKey;
+  String? _pendingPlanRouteKey;
+  bool _isPlanRouteApproximate = false;
+
   @override
   void initState() {
     super.initState();
     _appState = context.read<AppStateProvider>();
     _appState.addListener(_onAppStateChanged);
-    _previousActiveAlarmCount = _appState.alarms.where((a) => a.isActive).length;
+    _previousActiveAlarmCount = _appState.alarms
+        .where((a) => a.isActive)
+        .length;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncPlanRouteWithPlan();
+    });
     _resolveInitialMapTarget();
   }
 
@@ -85,6 +96,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
   /// React to alarm activation/deactivation transitions.
   void _onAppStateChanged() {
     final activeCount = _appState.alarms.where((a) => a.isActive).length;
+    _syncPlanRouteWithPlan();
 
     if (activeCount > 0 && _previousActiveAlarmCount == 0) {
       // Alarm(s) just activated → fit bounds to show device + alarm destinations
@@ -112,6 +124,93 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     _previousActiveAlarmCount = activeCount;
   }
 
+  List<LatLng> _currentPlanWaypoints() {
+    final plan = _appState.currentPlan;
+    if (plan == null) return const [];
+
+    return plan.stops
+        .map((stop) => LatLng(stop.latitude, stop.longitude))
+        .toList(growable: false);
+  }
+
+  String _routeKeyFor(List<LatLng> points) {
+    return points
+        .map(
+          (point) =>
+              '${point.latitude.toStringAsFixed(6)},${point.longitude.toStringAsFixed(6)}',
+        )
+        .join('|');
+  }
+
+  void _syncPlanRouteWithPlan() {
+    final waypoints = _currentPlanWaypoints();
+    if (waypoints.length < 2) {
+      if (_planRoute != null ||
+          _planRouteKey != null ||
+          _pendingPlanRouteKey != null ||
+          _isPlanRouteApproximate) {
+        setState(() {
+          _planRoute = null;
+          _planRouteKey = null;
+          _pendingPlanRouteKey = null;
+          _isPlanRouteApproximate = false;
+        });
+      }
+      return;
+    }
+
+    final routeKey = _routeKeyFor(waypoints);
+    if (_planRouteKey == routeKey || _pendingPlanRouteKey == routeKey) {
+      return;
+    }
+
+    setState(() {
+      _planRoute = null;
+      _planRouteKey = null;
+      _pendingPlanRouteKey = routeKey;
+      _isPlanRouteApproximate = false;
+    });
+
+    _fetchPlanRoute(waypoints: waypoints, routeKey: routeKey);
+  }
+
+  Future<void> _fetchPlanRoute({
+    required List<LatLng> waypoints,
+    required String routeKey,
+  }) async {
+    final route = await _routeService.fetchRouteGeometry(waypoints);
+    if (!mounted || _pendingPlanRouteKey != routeKey) return;
+
+    if (route.isNotEmpty) {
+      setState(() {
+        _planRoute = route;
+        _planRouteKey = routeKey;
+        _pendingPlanRouteKey = null;
+        _isPlanRouteApproximate = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _planRoute = null;
+      _planRouteKey = routeKey;
+      _pendingPlanRouteKey = null;
+      _isPlanRouteApproximate = true;
+    });
+    _showPlanRouteFallbackNotice();
+  }
+
+  void _showPlanRouteFallbackNotice() {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Could not load road route. Showing approximate route.'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
   Future<void> _fetchAlarmRoute() async {
     final activeAlarms = _appState.alarms.where((a) => a.isActive).toList();
     if (activeAlarms.isEmpty) return;
@@ -119,7 +218,10 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     final origin = _latestDeviceLocation ?? _initialMapTarget;
     if (origin == null) return;
 
-    final destination = LatLng(activeAlarms.first.latitude, activeAlarms.first.longitude);
+    final destination = LatLng(
+      activeAlarms.first.latitude,
+      activeAlarms.first.longitude,
+    );
 
     try {
       final route = await _routeService.computeRoutePolyline(
@@ -162,18 +264,12 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
       maxLng = math.max(maxLng, p.longitude);
     }
 
-    final bounds = LatLngBounds(
-      LatLng(minLat, minLng),
-      LatLng(maxLat, maxLng),
-    );
+    final bounds = LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
 
     _isProgrammaticCameraMove = true;
     try {
       _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: bounds,
-          padding: const EdgeInsets.all(80),
-        ),
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
       );
       debugPrint('$_mapTag Fitted bounds to active alarms');
     } catch (e) {
@@ -355,7 +451,7 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
       );
     }
 
-    // Mock plan stop markers
+    // Guide plan stop markers
     final plan = appState.currentPlan;
     if (plan != null) {
       for (int i = 0; i < plan.stops.length; i++) {
@@ -367,10 +463,9 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
             height: 40,
             child: Tooltip(
               message: '${i + 1}. ${stop.name}\n${stop.description}',
-              child: Icon(
-                CupertinoIcons.flag_fill,
-                color: Theme.of(context).colorScheme.secondary,
-                size: 34,
+              child: _numberedPlanMarker(
+                number: i + 1,
+                isFinalStop: i == plan.stops.length - 1,
               ),
             ),
           ),
@@ -379,6 +474,44 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
     }
 
     return markers;
+  }
+
+  Widget _numberedPlanMarker({required int number, required bool isFinalStop}) {
+    final theme = Theme.of(context);
+    final color = isFinalStop
+        ? theme.colorScheme.primary
+        : theme.colorScheme.secondary;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.22),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          '$number',
+          style:
+              theme.textTheme.labelLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ) ??
+              const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+        ),
+      ),
+    );
   }
 
   Marker _currentLocationMarker(LatLng point) {
@@ -446,12 +579,18 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
       final points = plan.stops
           .map((s) => LatLng(s.latitude, s.longitude))
           .toList();
+      final routeKey = _routeKeyFor(points);
+      final routePoints = _planRouteKey == routeKey && _planRoute != null
+          ? _planRoute!
+          : points;
 
       polylines.add(
         Polyline(
-          points: points,
-          color: Theme.of(context).colorScheme.secondary,
-          strokeWidth: 6,
+          points: routePoints,
+          color: Theme.of(context).colorScheme.secondary.withValues(
+            alpha: _isPlanRouteApproximate ? 0.72 : 1,
+          ),
+          strokeWidth: _isPlanRouteApproximate ? 4.5 : 6,
         ),
       );
     }

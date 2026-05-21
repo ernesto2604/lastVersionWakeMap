@@ -1,4 +1,4 @@
-
+import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -45,6 +45,7 @@ class _CommuterShellState extends State<CommuterShell> {
   @override
   void dispose() {
     _appState.unregisterAlarmTriggerCallback();
+    unawaited(_voiceAlarmService.cancel());
     super.dispose();
   }
 
@@ -88,13 +89,15 @@ class _CommuterShellState extends State<CommuterShell> {
       showCreateAlarmBottomSheet(context, initialDraft: draft);
     } on VoiceCaptureException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Voice capture failed. Please try again.')),
+        const SnackBar(
+          content: Text('Voice capture failed. Please try again.'),
+        ),
       );
     } finally {
       if (mounted && _isCapturingVoice) {
@@ -144,14 +147,21 @@ class _CommuterShellState extends State<CommuterShell> {
                   child: IgnorePointer(
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.9),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surface.withValues(alpha: 0.9),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: CupertinoColors.systemRed.withValues(alpha: 0.45),
+                          color: CupertinoColors.systemRed.withValues(
+                            alpha: 0.45,
+                          ),
                         ),
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         child: Text(
                           _liveTranscript,
                           maxLines: 2,
@@ -167,25 +177,17 @@ class _CommuterShellState extends State<CommuterShell> {
           bottomNavigationBar: PremiumBottomNavBar(
             currentIndex: tabIndex,
             onTap: (i) => _appState.setCommuterTab(i),
-            onExtraButtonTap: tabIndex == 1
-                ? _onVoiceAlarmPressed
-                : null,
+            onExtraButtonTap: tabIndex == 1 ? _onVoiceAlarmPressed : null,
             extraButtonIcon: _isCapturingVoice
-              ? CupertinoIcons.mic_fill
-              : CupertinoIcons.mic,
+                ? CupertinoIcons.mic_fill
+                : CupertinoIcons.mic,
             extraButtonLabel: _isCapturingVoice ? 'Listening' : 'Voice',
             extraButtonIconColor: _isCapturingVoice
-              ? CupertinoColors.systemRed
-              : null,
+                ? CupertinoColors.systemRed
+                : null,
             items: const [
-              PremiumBottomNavItem(
-                icon: CupertinoIcons.alarm,
-                label: 'Alarms',
-              ),
-              PremiumBottomNavItem(
-                icon: CupertinoIcons.map,
-                label: 'Map',
-              ),
+              PremiumBottomNavItem(icon: CupertinoIcons.alarm, label: 'Alarms'),
+              PremiumBottomNavItem(icon: CupertinoIcons.map, label: 'Map'),
             ],
           ),
         );

@@ -103,6 +103,10 @@ class AppStateProvider extends ChangeNotifier {
   void _loadInitialState() {
     _mode = _storage.getSavedMode();
     _alarms = _alarmService.loadAlarms();
+    if (_activeAlarmCount > 1 ||
+        _alarms.any((a) => a.isActive && a.hasTriggered)) {
+      unawaited(_normalizePersistedActiveAlarms());
+    }
     debugPrint('$_tag Loaded ${_alarms.length} alarms, mode=$_mode');
     debugPrint('$_tag Active alarms: $_activeAlarmCount');
     notifyListeners();
@@ -110,6 +114,15 @@ class AppStateProvider extends ChangeNotifier {
 
   int get _activeAlarmCount =>
       _alarms.where((a) => a.isActive && !a.hasTriggered).length;
+
+  Future<void> _normalizePersistedActiveAlarms() async {
+    await _alarmService.normalizeActiveAlarms();
+    _alarms = _alarmService.loadAlarms();
+    debugPrint(
+      '$_tag Normalized persisted active alarms. Active count: $_activeAlarmCount',
+    );
+    notifyListeners();
+  }
 
   // ══════════════════════════════════════════
   //  Mode
@@ -121,6 +134,16 @@ class AppStateProvider extends ChangeNotifier {
     await _storage.saveMode(mode);
     _commuterTabIndex = 0;
     _travellerTabIndex = 0;
+
+    if (previousMode != null && previousMode != mode) {
+      await _alarmService.deactivateAllAlarms();
+      _alarms = _alarmService.loadAlarms();
+      _triggeredAlarm = null;
+      _isAlarmScreenShowing = false;
+      _isNavigatingToTrigger = false;
+      stopLocationTracking();
+      debugPrint('$_tag Deactivated alarms on mode switch');
+    }
 
     // Clear stale guide state when switching away from traveller
     if (previousMode == AppMode.traveller && mode != AppMode.traveller) {
@@ -663,8 +686,20 @@ class AppStateProvider extends ChangeNotifier {
 
     // Si el mensaje contiene una instrucción clara de acción sobre el plan, forzar refinamiento
     const actionVerbs = [
-      'add', 'remove', 'delete', 'insert', 'replace', 'eliminate', 'include', 'exclude',
-      'añadir', 'quitar', 'modificar', 'eliminar', 'incluir', 'excluir',
+      'add',
+      'remove',
+      'delete',
+      'insert',
+      'replace',
+      'eliminate',
+      'include',
+      'exclude',
+      'añadir',
+      'quitar',
+      'modificar',
+      'eliminar',
+      'incluir',
+      'excluir',
     ];
     final containsAction = actionVerbs.any((v) => msg.contains(v));
 
