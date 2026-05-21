@@ -61,28 +61,34 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
   String? _autocompleteInfoMessage;
   Timer? _locationDebounce;
   late final String _placesSessionToken;
+  List<String> _voiceResolveQueries = const [];
 
   @override
   void initState() {
     super.initState();
     _placesSessionToken = const Uuid().v4();
-    _nameController.addListener(_onFieldChanged);
-    _locationController.addListener(_onLocationFieldChanged);
 
     final draft = widget.initialDraft;
     if (draft != null) {
       _nameController.text = draft.alarmName;
-      _locationController.text = draft.location;
+      _locationController.text = draft.displayLocation;
       _radius = draft.radiusMeters.clamp(100, 1000).toDouble();
-      _locationNeedsResolve = draft.location.trim().isNotEmpty;
+      _voiceResolveQueries = draft.geocodingQueries();
+      _locationNeedsResolve = draft.displayLocation.trim().isNotEmpty;
     }
+
+    _nameController.addListener(_onFieldChanged);
+    _locationController.addListener(_onLocationFieldChanged);
 
     _loadCurrentLocation();
 
     if (draft != null && _locationNeedsResolve) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _resolveLocationFromInput();
+        _resolveLocationFromInput(
+          preferredQueries: _voiceResolveQueries,
+          preserveLocationText: true,
+        );
       });
     }
   }
@@ -97,6 +103,7 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     _onFieldChanged();
     if (!_isApplyingSuggestion) {
       _locationNeedsResolve = true;
+      _voiceResolveQueries = const [];
     }
     _scheduleAutocomplete();
   }
@@ -175,61 +182,104 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     _moveMap(point, 14);
   }
 
-  Future<bool> _resolveLocationFromInput() async {
+  Future<bool> _resolveLocationFromInput({
+    List<String>? preferredQueries,
+    bool preserveLocationText = false,
+  }) async {
     final query = _locationController.text.trim();
     if (query.isEmpty) return false;
 
-    PlaceSuggestion? suggestion;
-    for (final item in _locationSuggestions) {
-      if (item.description.toLowerCase() == query.toLowerCase()) {
-        suggestion = item;
-        break;
-      }
-    }
+    final queries = _buildResolveQueries(preferredQueries, query);
+    String? lastStatus;
+    String? lastErrorMessage;
 
-    if (suggestion == null) {
-      final result = await _placesService.autocompleteDetailed(
-        query: query,
+    for (final resolveQuery in queries) {
+      PlaceSuggestion? suggestion;
+      for (final item in _locationSuggestions) {
+        if (item.description.toLowerCase() == resolveQuery.toLowerCase()) {
+          suggestion = item;
+          break;
+        }
+      }
+
+      if (suggestion == null) {
+        final result = await _placesService.autocompleteDetailed(
+          query: resolveQuery,
+          sessionToken: _placesSessionToken,
+        );
+        if (!mounted) return false;
+
+        lastStatus = result.status;
+        lastErrorMessage = result.errorMessage;
+        if (result.suggestions.isEmpty) continue;
+
+        suggestion = result.suggestions.first;
+      }
+
+      final coordinates = await _placesService.getPlaceCoordinates(
+        placeId: suggestion.placeId,
         sessionToken: _placesSessionToken,
       );
       if (!mounted) return false;
+      if (coordinates == null) continue;
 
-      if (result.suggestions.isEmpty) {
-        setState(() {
-          final detail = (result.errorMessage ?? result.status).trim();
-          _autocompleteInfoMessage =
-              result.status == 'ZERO_RESULTS' ? 'No matching locations found.' : 'Places error: $detail';
-        });
-        return false;
+      final point = LatLng(coordinates.latitude, coordinates.longitude);
+      if (!preserveLocationText) {
+        _isApplyingSuggestion = true;
+        _locationController.text = suggestion.description;
+        _locationController.selection = TextSelection.fromPosition(
+          TextPosition(offset: _locationController.text.length),
+        );
+        _isApplyingSuggestion = false;
       }
 
-      suggestion = result.suggestions.first;
+      setState(() {
+        _selectedLocation = point;
+        _initialCenter = point;
+        _isLoadingSuggestions = false;
+        _locationSuggestions = const [];
+        _autocompleteInfoMessage = null;
+        _locationNeedsResolve = false;
+        _voiceResolveQueries = const [];
+      });
+      _moveMap(point, 14);
+      return true;
     }
 
-    final coordinates = await _placesService.getPlaceCoordinates(
-      placeId: suggestion.placeId,
-      sessionToken: _placesSessionToken,
-    );
-    if (!mounted || coordinates == null) return false;
-
-    final point = LatLng(coordinates.latitude, coordinates.longitude);
-    _isApplyingSuggestion = true;
-    _locationController.text = suggestion.description;
-    _locationController.selection = TextSelection.fromPosition(
-      TextPosition(offset: _locationController.text.length),
-    );
-    _isApplyingSuggestion = false;
+    if (!mounted) return false;
 
     setState(() {
-      _selectedLocation = point;
-      _initialCenter = point;
       _isLoadingSuggestions = false;
       _locationSuggestions = const [];
-      _autocompleteInfoMessage = null;
-      _locationNeedsResolve = false;
+      final detail = (lastErrorMessage ?? lastStatus ?? 'ZERO_RESULTS').trim();
+      _autocompleteInfoMessage = lastStatus == 'ZERO_RESULTS'
+          ? 'No matching locations found.'
+          : 'Places error: $detail';
     });
-    _moveMap(point, 14);
-    return true;
+    return false;
+  }
+
+  List<String> _buildResolveQueries(
+    List<String>? preferredQueries,
+    String visibleQuery,
+  ) {
+    final queries = <String>[];
+
+    void add(String value) {
+      final trimmed = value.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (trimmed.isEmpty) return;
+      final exists = queries.any(
+        (item) => item.toLowerCase() == trimmed.toLowerCase(),
+      );
+      if (!exists) queries.add(trimmed);
+    }
+
+    for (final query in preferredQueries ?? const <String>[]) {
+      add(query);
+    }
+    add(visibleQuery);
+
+    return queries;
   }
 
   Future<void> _loadCurrentLocation() async {
@@ -345,8 +395,9 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
         radius: _radius,
         useRadiusInMeter: true,
         color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-        borderColor:
-            Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+        borderColor: Theme.of(
+          context,
+        ).colorScheme.primary.withValues(alpha: 0.5),
         borderStrokeWidth: 2,
       ),
     ];
@@ -358,7 +409,12 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     final appState = context.read<AppStateProvider>();
 
     if (_selectedLocation == null || _locationNeedsResolve) {
-      final resolved = await _resolveLocationFromInput();
+      final resolved = await _resolveLocationFromInput(
+        preferredQueries: _voiceResolveQueries.isEmpty
+            ? null
+            : _voiceResolveQueries,
+        preserveLocationText: _voiceResolveQueries.isNotEmpty,
+      );
       if (!resolved) {
         if (!mounted) return;
         showCupertinoDialog<void>(
@@ -402,12 +458,12 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
     }
 
     await appState.createAlarm(
-          name: _nameController.text.trim(),
-          locationLabel: _locationController.text.trim(),
-          latitude: _selectedLocation!.latitude,
-          longitude: _selectedLocation!.longitude,
-          radiusMeters: _radius,
-        );
+      name: _nameController.text.trim(),
+      locationLabel: _locationController.text.trim(),
+      latitude: _selectedLocation!.latitude,
+      longitude: _selectedLocation!.longitude,
+      radiusMeters: _radius,
+    );
 
     if (mounted) {
       Navigator.of(context).pop();
@@ -448,7 +504,8 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                         : AutovalidateMode.disabled,
                     decoration: InputDecoration(
                       labelText: 'Alarm Name',
-                      floatingLabelBehavior: _shouldShowEmptyError(_nameController)
+                      floatingLabelBehavior:
+                          _shouldShowEmptyError(_nameController)
                           ? FloatingLabelBehavior.always
                           : FloatingLabelBehavior.auto,
                       filled: false,
@@ -457,19 +514,25 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                       labelStyle: theme.textTheme.titleMedium?.copyWith(
                         color: _shouldShowEmptyError(_nameController)
                             ? theme.colorScheme.error
-                            : theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                            : theme.colorScheme.onSurface.withValues(
+                                alpha: 0.55,
+                              ),
                         fontWeight: FontWeight.w600,
                         decoration: TextDecoration.none,
                       ),
                       enabledBorder: UnderlineInputBorder(
                         borderSide: BorderSide(
-                          color: theme.colorScheme.onSurface.withValues(alpha: 0.22),
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.22,
+                          ),
                           width: 1,
                         ),
                       ),
                       focusedBorder: UnderlineInputBorder(
                         borderSide: BorderSide(
-                          color: theme.colorScheme.primary.withValues(alpha: 0.9),
+                          color: theme.colorScheme.primary.withValues(
+                            alpha: 0.9,
+                          ),
                           width: 2,
                         ),
                       ),
@@ -509,27 +572,36 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                           labelText: 'Location',
                           floatingLabelBehavior:
                               _shouldShowEmptyError(_locationController)
-                                  ? FloatingLabelBehavior.always
-                                  : FloatingLabelBehavior.auto,
+                              ? FloatingLabelBehavior.always
+                              : FloatingLabelBehavior.auto,
                           filled: false,
                           isDense: true,
-                          contentPadding: const EdgeInsets.only(top: 6, bottom: 10),
+                          contentPadding: const EdgeInsets.only(
+                            top: 6,
+                            bottom: 10,
+                          ),
                           labelStyle: theme.textTheme.titleMedium?.copyWith(
                             color: _shouldShowEmptyError(_locationController)
                                 ? theme.colorScheme.error
-                                : theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                                : theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.55,
+                                  ),
                             fontWeight: FontWeight.w600,
                             decoration: TextDecoration.none,
                           ),
                           enabledBorder: UnderlineInputBorder(
                             borderSide: BorderSide(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.22),
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.22,
+                              ),
                               width: 1,
                             ),
                           ),
                           focusedBorder: UnderlineInputBorder(
                             borderSide: BorderSide(
-                              color: theme.colorScheme.primary.withValues(alpha: 0.9),
+                              color: theme.colorScheme.primary.withValues(
+                                alpha: 0.9,
+                              ),
                               width: 2,
                             ),
                           ),
@@ -559,10 +631,13 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                         Container(
                           margin: const EdgeInsets.only(top: 8),
                           decoration: BoxDecoration(
-                            color: CupertinoColors.secondarySystemGroupedBackground,
+                            color: CupertinoColors
+                                .secondarySystemGroupedBackground,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: theme.colorScheme.outline.withValues(alpha: 0.16),
+                              color: theme.colorScheme.outline.withValues(
+                                alpha: 0.16,
+                              ),
                             ),
                           ),
                           constraints: const BoxConstraints(maxHeight: 190),
@@ -574,7 +649,9 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                                       SizedBox(
                                         width: 16,
                                         height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
                                       ),
                                       SizedBox(width: 10),
                                       Text('Searching locations...'),
@@ -582,35 +659,36 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                                   ),
                                 )
                               : _locationSuggestions.isNotEmpty
-                                  ? ListView.separated(
-                                      shrinkWrap: true,
-                                      padding: EdgeInsets.zero,
-                                      itemCount: _locationSuggestions.length,
-                                      separatorBuilder: (context, index) =>
-                                          const Divider(height: 1),
-                                      itemBuilder: (context, index) {
-                                        final suggestion = _locationSuggestions[index];
-                                        return ListTile(
-                                          dense: true,
-                                          title: Text(
-                                            suggestion.description,
-                                            style: theme.textTheme.bodyMedium,
-                                          ),
-                                          onTap: () => _applySuggestion(suggestion),
-                                        );
-                                      },
-                                    )
-                                  : Padding(
-                                      padding: const EdgeInsets.all(12),
-                                      child: Text(
-                                        _autocompleteInfoMessage ??
-                                            'No matching locations found.',
-                                        style: theme.textTheme.bodySmall?.copyWith(
-                                          color: theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.75),
-                                        ),
+                              ? ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: EdgeInsets.zero,
+                                  itemCount: _locationSuggestions.length,
+                                  separatorBuilder: (context, index) =>
+                                      const Divider(height: 1),
+                                  itemBuilder: (context, index) {
+                                    final suggestion =
+                                        _locationSuggestions[index];
+                                    return ListTile(
+                                      dense: true,
+                                      title: Text(
+                                        suggestion.description,
+                                        style: theme.textTheme.bodyMedium,
                                       ),
+                                      onTap: () => _applySuggestion(suggestion),
+                                    );
+                                  },
+                                )
+                              : Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Text(
+                                    _autocompleteInfoMessage ??
+                                        'No matching locations found.',
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: theme.colorScheme.onSurface
+                                          .withValues(alpha: 0.75),
                                     ),
+                                  ),
+                                ),
                         ),
                     ],
                   ),
@@ -641,7 +719,9 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                       if (_loadingLocation)
                         Positioned.fill(
                           child: Container(
-                            color: theme.colorScheme.surface.withValues(alpha: 0.7),
+                            color: theme.colorScheme.surface.withValues(
+                              alpha: 0.7,
+                            ),
                             child: const Center(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
@@ -723,13 +803,14 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                       SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 4,
-                          activeTrackColor:
-                              theme.colorScheme.primary.withValues(alpha: 0.95),
-                          inactiveTrackColor:
-                              theme.colorScheme.onSurface.withValues(alpha: 0.22),
+                          activeTrackColor: theme.colorScheme.primary
+                              .withValues(alpha: 0.95),
+                          inactiveTrackColor: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.22),
                           thumbColor: theme.colorScheme.primary,
-                          overlayColor:
-                              theme.colorScheme.primary.withValues(alpha: 0.14),
+                          overlayColor: theme.colorScheme.primary.withValues(
+                            alpha: 0.14,
+                          ),
                         ),
                         child: Slider(
                           value: _radius,
@@ -737,8 +818,10 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                           max: 1000,
                           label: '${_radius.round()} m',
                           onChanged: (val) {
-                            final snapped =
-                                ((val / 50).round() * 50).clamp(100, 1000);
+                            final snapped = ((val / 50).round() * 50).clamp(
+                              100,
+                              1000,
+                            );
                             setState(() => _radius = snapped.toDouble());
                           },
                         ),
@@ -817,8 +900,9 @@ class _InteractiveBottomSheetContainerState
   static const double _dismissVelocity = 900;
 
   void _onDragUpdate(DragUpdateDetails details) {
-    final nextOffset =
-        (_sheetOffset + details.delta.dy).clamp(0, double.infinity).toDouble();
+    final nextOffset = (_sheetOffset + details.delta.dy)
+        .clamp(0, double.infinity)
+        .toDouble();
     setState(() {
       _isDragging = true;
       _sheetOffset = nextOffset;
@@ -827,8 +911,8 @@ class _InteractiveBottomSheetContainerState
 
   void _onDragEnd(DragEndDetails details) {
     final velocity = details.primaryVelocity ?? 0;
-    final shouldDismiss = _sheetOffset > _dismissDistance ||
-        velocity > _dismissVelocity;
+    final shouldDismiss =
+        _sheetOffset > _dismissDistance || velocity > _dismissVelocity;
 
     if (shouldDismiss) {
       widget.onDismiss();

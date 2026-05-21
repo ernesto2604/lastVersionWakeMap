@@ -53,4 +53,45 @@ void main() {
       expect(high.radiusMeters, 1000);
     });
   });
+
+  group('VoiceAlarmDraft AI payload', () {
+    test('accepts strict parser JSON and builds station fallback queries', () {
+      final draft = VoiceAlarmDraft.fromJson({
+        'alarmName': 'York Station',
+        'displayLocation': 'York Station, York, UK',
+        'geocodingQuery': 'York Station, York, UK',
+        'radiusMeters': 300,
+        'confidence': 'medium',
+        'missingFields': [],
+      });
+
+      expect(draft.alarmName, 'York Station');
+      expect(draft.location, 'York Station, York, UK');
+      expect(draft.geocodingQuery, 'York Station, York, UK');
+      expect(draft.radiusMeters, 300);
+      expect(draft.confidence, 'medium');
+      expect(
+        draft.geocodingQueries(),
+        containsAll([
+          'York Station, York, UK',
+          'York train station, UK',
+          'York railway station, UK',
+          'York Station',
+        ]),
+      );
+    });
+
+    test('clamps parser radius to the supported slider range', () {
+      final draft = VoiceAlarmDraft.fromJson({
+        'alarmName': 'Leeds Station',
+        'displayLocation': 'Leeds Station, Leeds, UK',
+        'geocodingQuery': 'Leeds train station, UK',
+        'radiusMeters': 2000,
+        'confidence': 'high',
+        'missingFields': [],
+      });
+
+      expect(draft.radiusMeters, 1000);
+    });
+  });
 }

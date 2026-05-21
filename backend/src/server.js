@@ -47,6 +47,17 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.post('/api/parse-voice-alarm', async (req, res, next) => {
+  try {
+    const transcript = requireString(req.body?.transcript, 'transcript');
+    const prompt = buildVoiceAlarmParsePrompt(transcript);
+    const parsedAlarm = await requestAndValidateVoiceAlarm(prompt);
+    res.json(parsedAlarm);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/guide/chat-only', async (req, res, next) => {
   try {
     const requestContext = requireObject(req.body?.requestContext, 'requestContext');
@@ -168,11 +179,11 @@ function hasGeminiApiKey() {
   return (process.env.GEMINI_API_KEY ?? '').trim().length > 0;
 }
 
-function resolveGeminiApiKey() {
+function resolveGeminiApiKey(serviceName = 'Guide service') {
   const apiKey = (process.env.GEMINI_API_KEY ?? '').trim();
   if (!apiKey) {
     throw new GuideProxyError(
-      'Guide service is not configured on the server.',
+      `${serviceName} is not configured on the server.`,
       503,
     );
   }
@@ -221,8 +232,32 @@ async function requestAndValidatePlan(prompt) {
   return validatePlanPayload(decoded);
 }
 
-async function requestGeminiText({ prompt, responseMimeType, temperature }) {
-  const apiKey = resolveGeminiApiKey();
+async function requestAndValidateVoiceAlarm(prompt) {
+  const text = await requestGeminiText({
+    prompt,
+    responseMimeType: 'application/json',
+    temperature: 0.15,
+    serviceName: 'Voice parser service',
+  });
+
+  const rawJson = extractFirstJsonObject(text);
+  let decoded;
+  try {
+    decoded = JSON.parse(rawJson);
+  } catch (_error) {
+    throw new GuideProxyError('Voice parser returned invalid JSON.', 502);
+  }
+
+  return validateVoiceAlarmPayload(decoded);
+}
+
+async function requestGeminiText({
+  prompt,
+  responseMimeType,
+  temperature,
+  serviceName = 'Guide service',
+}) {
+  const apiKey = resolveGeminiApiKey(serviceName);
   const model = resolveGeminiModel();
 
   const endpoint = new URL(
@@ -257,7 +292,7 @@ async function requestGeminiText({ prompt, responseMimeType, temperature }) {
       signal: controller.signal,
     });
   } catch (_error) {
-    throw new GuideProxyError('Guide service is temporarily unavailable.', 503);
+    throw new GuideProxyError(`${serviceName} is temporarily unavailable.`, 503);
   } finally {
     clearTimeout(timeout);
   }
@@ -272,12 +307,12 @@ async function requestGeminiText({ prompt, responseMimeType, temperature }) {
 
   if (!response.ok) {
     const status = response.status;
-    const safeError = mapGeminiStatusToClientMessage(status);
+    const safeError = mapGeminiStatusToClientMessage(status, serviceName);
     console.error(`[GuideProxy] Gemini HTTP ${status}.`);
     throw new GuideProxyError(safeError, mapGeminiStatusToHttpStatus(status));
   }
 
-  return extractModelText(decoded);
+  return extractModelText(decoded, serviceName);
 }
 
 function mapGeminiStatusToHttpStatus(status) {
@@ -287,39 +322,39 @@ function mapGeminiStatusToHttpStatus(status) {
   return 502;
 }
 
-function mapGeminiStatusToClientMessage(status) {
+function mapGeminiStatusToClientMessage(status, serviceName = 'Guide service') {
   if (status === 401 || status === 403) {
-    return 'Guide service is not configured on the server.';
+    return `${serviceName} is not configured on the server.`;
   }
   if (status === 429) {
-    return 'Guide service is busy. Please try again in a moment.';
+    return `${serviceName} is busy. Please try again in a moment.`;
   }
   if (status >= 500) {
-    return 'Guide service is temporarily unavailable.';
+    return `${serviceName} is temporarily unavailable.`;
   }
-  return 'Guide service request failed.';
+  return `${serviceName} request failed.`;
 }
 
-function extractModelText(decoded) {
+function extractModelText(decoded, serviceName = 'Guide service') {
   if (!decoded || typeof decoded !== 'object') {
-    throw new GuideProxyError('Guide service returned an invalid response shape.', 502);
+    throw new GuideProxyError(`${serviceName} returned an invalid response shape.`, 502);
   }
 
   const candidates = decoded.candidates;
   if (!Array.isArray(candidates) || candidates.length === 0) {
-    throw new GuideProxyError('Guide service returned no candidates.', 502);
+    throw new GuideProxyError(`${serviceName} returned no candidates.`, 502);
   }
 
   const firstCandidate = candidates[0];
   const parts = firstCandidate?.content?.parts;
   if (!Array.isArray(parts) || parts.length === 0) {
-    throw new GuideProxyError('Guide service returned empty content.', 502);
+    throw new GuideProxyError(`${serviceName} returned empty content.`, 502);
   }
 
   const firstPart = parts[0];
   const text = typeof firstPart?.text === 'string' ? firstPart.text : '';
   if (!text.trim()) {
-    throw new GuideProxyError('Guide service returned empty text.', 502);
+    throw new GuideProxyError(`${serviceName} returned empty text.`, 502);
   }
 
   return text;
@@ -337,6 +372,39 @@ function extractFirstJsonObject(text) {
     throw new GuideProxyError('Guide service returned no JSON object.', 502);
   }
   return trimmed.slice(start, end + 1);
+}
+
+function validateVoiceAlarmPayload(payload) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new GuideProxyError('Voice parser payload is invalid.', 502);
+  }
+
+  const displayLocation = optionalString(payload.displayLocation);
+  const geocodingQuery = optionalString(payload.geocodingQuery);
+  const missingFields = parseMissingFields(payload.missingFields);
+  const hasDestination = displayLocation.length > 0 || geocodingQuery.length > 0;
+
+  if (!hasDestination && !missingFields.includes('destination')) {
+    missingFields.push('destination');
+  }
+
+  const safeDisplayLocation = displayLocation || geocodingQuery;
+  const safeGeocodingQuery = geocodingQuery || displayLocation;
+  const confidence = hasDestination
+    ? normalizeConfidence(payload.confidence)
+    : 'low';
+
+  return {
+    alarmName:
+      optionalString(payload.alarmName) ||
+      deriveAlarmName(safeDisplayLocation) ||
+      'Voice Alarm',
+    displayLocation: safeDisplayLocation,
+    geocodingQuery: safeGeocodingQuery,
+    radiusMeters: clampRadiusMeters(payload.radiusMeters),
+    confidence,
+    missingFields,
+  };
 }
 
 function validatePlanPayload(payload) {
@@ -382,6 +450,40 @@ function validatePlanPayload(payload) {
   };
 }
 
+function normalizeConfidence(value) {
+  const normalized = optionalString(value).toLowerCase();
+  if (['high', 'medium', 'low'].includes(normalized)) return normalized;
+  return 'low';
+}
+
+function parseMissingFields(value) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .filter((item) => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function clampRadiusMeters(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 300;
+  return Math.min(1000, Math.max(100, Math.round(number)));
+}
+
+function deriveAlarmName(displayLocation) {
+  const firstPart = optionalString(displayLocation).split(',')[0]?.trim() ?? '';
+  if (!firstPart) return '';
+  return firstPart
+    .replace(/\s+/g, ' ')
+    .replace(/\btrain station\b/i, 'Station')
+    .replace(/\brailway station\b/i, 'Station')
+    .trim();
+}
+
 function requireNonEmptyString(value, fieldName) {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new GuideProxyError(`Guide payload field "${fieldName}" is invalid.`, 502);
@@ -401,6 +503,63 @@ function requireFiniteNumber(value, fieldName) {
     throw new GuideProxyError(`Guide payload field "${fieldName}" is invalid.`, 502);
   }
   return number;
+}
+
+function buildVoiceAlarmParsePrompt(transcript) {
+  const transcriptJson = JSON.stringify(transcript);
+  return `You are a strict JSON parser for WakeMap, a mobile app that creates location-based alarms.
+Extract alarmName, displayLocation, geocodingQuery, radiusMeters, confidence and missingFields from the user's voice transcript.
+Return ONLY valid JSON.
+Do not include Markdown.
+Do not include code fences.
+Do not include explanations.
+
+Use exactly this JSON schema:
+{
+  "alarmName": "string",
+  "displayLocation": "string",
+  "geocodingQuery": "string",
+  "radiusMeters": number,
+  "confidence": "high" | "medium" | "low",
+  "missingFields": ["string"]
+}
+
+Rules:
+- Support English and Spanish.
+- Normalize vague or natural phrases into geocoding-friendly place names.
+- Remove command words such as "when I arrive at", "wake me near", "pon una alarma para cuando llegue a".
+- If the user explicitly says the alarm is called/named/llamada X, use X for alarmName.
+- If no alarm name is given, use a concise name based on the destination.
+- If the user mentions a train station in a city, convert it to a searchable station name.
+- Examples of station normalization: "la estacion de tren en York, UK" -> "York Station, York, UK"; "estacion de tren de Leeds" -> "Leeds Station, Leeds, UK".
+- displayLocation should be clean and human-readable.
+- geocodingQuery must be concise and optimized for map search.
+- If no radius is mentioned, use 300.
+- Clamp radiusMeters between 100 and 1000.
+- confidence is "high" if destination and radius are clear.
+- confidence is "medium" if destination is clear but radius or wording is defaulted.
+- confidence is "low" if the destination is unclear.
+- If the destination is unclear, set displayLocation and geocodingQuery to empty strings and include "destination" in missingFields.
+- If everything is clear, missingFields must be [].
+
+Examples:
+Transcript: "Pon una alarma para cuando llegue a la estacion de tren en York, UK"
+JSON: {"alarmName":"York Station","displayLocation":"York Station, York, UK","geocodingQuery":"York Station, York, UK","radiusMeters":300,"confidence":"medium","missingFields":[]}
+
+Transcript: "Pon una alarma para la estacion de tren de Leeds con radio de 500 metros"
+JSON: {"alarmName":"Leeds Station","displayLocation":"Leeds Station, Leeds, UK","geocodingQuery":"Leeds train station, UK","radiusMeters":500,"confidence":"high","missingFields":[]}
+
+Transcript: "Create an alarm for York Station with a radius of 300 metres"
+JSON: {"alarmName":"York Station","displayLocation":"York Station, York, UK","geocodingQuery":"York Station, York, UK","radiusMeters":300,"confidence":"high","missingFields":[]}
+
+Transcript: "Set an alarm called University for York St John University with a 200 metre radius"
+JSON: {"alarmName":"University","displayLocation":"York St John University, York, UK","geocodingQuery":"York St John University, York, UK","radiusMeters":200,"confidence":"high","missingFields":[]}
+
+Transcript: "Wake me near Leeds train station at 500 metres"
+JSON: {"alarmName":"Leeds Station","displayLocation":"Leeds Station, Leeds, UK","geocodingQuery":"Leeds train station, UK","radiusMeters":500,"confidence":"high","missingFields":[]}
+
+User transcript JSON string:
+${transcriptJson}`;
 }
 
 function buildChatOnlyPrompt({ requestContext, userMessage }) {

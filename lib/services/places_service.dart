@@ -3,20 +3,14 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class PlaceSuggestion {
-  const PlaceSuggestion({
-    required this.placeId,
-    required this.description,
-  });
+  const PlaceSuggestion({required this.placeId, required this.description});
 
   final String placeId;
   final String description;
 }
 
 class PlaceCoordinates {
-  const PlaceCoordinates({
-    required this.latitude,
-    required this.longitude,
-  });
+  const PlaceCoordinates({required this.latitude, required this.longitude});
 
   final double latitude;
   final double longitude;
@@ -71,12 +65,21 @@ class PlacesService {
       'accept-language': 'es',
     });
 
-    final response = await _client.get(
-      uri,
-      headers: {
-        'User-Agent': 'WakeMap/1.0 (OpenStreetMap flutter_map client)',
-      },
-    );
+    late final http.Response response;
+    try {
+      response = await _client.get(
+        uri,
+        headers: {
+          'User-Agent': 'WakeMap/1.0 (OpenStreetMap flutter_map client)',
+        },
+      );
+    } catch (_) {
+      return const PlacesAutocompleteResult(
+        suggestions: [],
+        status: 'NETWORK_ERROR',
+        errorMessage: 'Location search is temporarily unavailable.',
+      );
+    }
 
     if (response.statusCode != 200) {
       String? errorMessage;
@@ -94,11 +97,21 @@ class PlacesService {
         suggestions: const [],
         status: status,
         errorMessage:
-            errorMessage ?? 'Autocomplete request failed (${response.statusCode}).',
+            errorMessage ??
+            'Autocomplete request failed (${response.statusCode}).',
       );
     }
 
-    final rawSuggestions = jsonDecode(response.body) as List<dynamic>? ?? const [];
+    final List<dynamic> rawSuggestions;
+    try {
+      rawSuggestions = jsonDecode(response.body) as List<dynamic>? ?? const [];
+    } catch (_) {
+      return const PlacesAutocompleteResult(
+        suggestions: [],
+        status: 'MALFORMED_RESPONSE',
+        errorMessage: 'Location search returned malformed data.',
+      );
+    }
     if (rawSuggestions.isEmpty) {
       return const PlacesAutocompleteResult(
         suggestions: [],

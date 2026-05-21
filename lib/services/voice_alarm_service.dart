@@ -1,9 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui';
 
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+
+import '../config/app_config.dart';
 
 class VoiceCaptureException implements Exception {
   const VoiceCaptureException(this.message);
@@ -14,27 +18,173 @@ class VoiceCaptureException implements Exception {
   String toString() => message;
 }
 
+class VoiceAlarmParseException implements Exception {
+  const VoiceAlarmParseException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class VoiceAlarmDraft {
   const VoiceAlarmDraft({
     required this.alarmName,
-    required this.location,
+    required String location,
+    String? displayLocation,
+    String? geocodingQuery,
     this.radiusMeters = 100,
     this.transcript,
-  });
+    this.confidence = 'medium',
+    this.missingFields = const [],
+  }) : location = displayLocation ?? location,
+       displayLocation = displayLocation ?? location,
+       geocodingQuery = geocodingQuery ?? displayLocation ?? location;
 
   final String alarmName;
   final String location;
+  final String displayLocation;
+  final String geocodingQuery;
   final double radiusMeters;
   final String? transcript;
+  final String confidence;
+  final List<String> missingFields;
+
+  factory VoiceAlarmDraft.fromJson(
+    Map<String, dynamic> json, {
+    String? transcript,
+  }) {
+    final alarmName = _requiredTrimmedString(json['alarmName'], 'alarmName');
+    final displayLocation = _requiredTrimmedString(
+      json['displayLocation'],
+      'displayLocation',
+    );
+    final geocodingQuery = _requiredTrimmedString(
+      json['geocodingQuery'],
+      'geocodingQuery',
+    );
+    final radius = _parseRadius(json['radiusMeters']);
+    final confidence = _parseConfidence(json['confidence']);
+    final missingFields = _parseMissingFields(json['missingFields']);
+
+    return VoiceAlarmDraft(
+      alarmName: alarmName,
+      location: displayLocation,
+      displayLocation: displayLocation,
+      geocodingQuery: geocodingQuery,
+      radiusMeters: radius,
+      transcript: transcript,
+      confidence: confidence,
+      missingFields: missingFields,
+    );
+  }
+
+  List<String> geocodingQueries() {
+    final queries = <String>[];
+
+    void add(String value) {
+      final trimmed = _normalizeSpacesStatic(value);
+      if (trimmed.isEmpty) return;
+      final exists = queries.any(
+        (item) => item.toLowerCase() == trimmed.toLowerCase(),
+      );
+      if (!exists) queries.add(trimmed);
+    }
+
+    add(displayLocation);
+    add(geocodingQuery);
+
+    final stationCity =
+        _extractStationCity(displayLocation) ??
+        _extractStationCity(geocodingQuery);
+    if (stationCity != null) {
+      add('$stationCity Station, $stationCity, UK');
+      add('$stationCity train station, UK');
+      add('$stationCity railway station, UK');
+      add('$stationCity Station');
+    }
+
+    add(_withoutCountrySuffix(displayLocation));
+    add(_withoutCountrySuffix(geocodingQuery));
+
+    return queries;
+  }
+
+  static String _requiredTrimmedString(Object? value, String fieldName) {
+    if (value is! String || value.trim().isEmpty) {
+      throw VoiceAlarmParseException(
+        'Voice parser returned an invalid "$fieldName" value.',
+      );
+    }
+    return _normalizeSpacesStatic(value);
+  }
+
+  static double _parseRadius(Object? value) {
+    final number = value is num ? value.toDouble() : double.tryParse('$value');
+    if (number == null || !number.isFinite) {
+      throw const VoiceAlarmParseException(
+        'Voice parser returned an invalid radius.',
+      );
+    }
+    return number.clamp(100, 1000).toDouble();
+  }
+
+  static String _parseConfidence(Object? value) {
+    if (value is! String) return 'low';
+    final normalized = value.trim().toLowerCase();
+    return const {'high', 'medium', 'low'}.contains(normalized)
+        ? normalized
+        : 'low';
+  }
+
+  static List<String> _parseMissingFields(Object? value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<String>()
+        .map(_normalizeSpacesStatic)
+        .where((item) => item.isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
+  static String _normalizeSpacesStatic(String text) {
+    return text.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  static String? _extractStationCity(String value) {
+    final firstPart = value.split(',').first.trim();
+    if (firstPart.isEmpty) return null;
+
+    final stationMatch = RegExp(
+      r'^(.+?)\s+(?:train\s+station|railway\s+station|station)$',
+      caseSensitive: false,
+    ).firstMatch(firstPart);
+    if (stationMatch == null) return null;
+
+    final city = _normalizeSpacesStatic(stationMatch.group(1) ?? '');
+    return city.isEmpty ? null : city;
+  }
+
+  static String _withoutCountrySuffix(String value) {
+    var output = _normalizeSpacesStatic(value);
+    output = output.replaceFirst(
+      RegExp(r',?\s*(?:uk|united kingdom)$', caseSensitive: false),
+      '',
+    );
+    return _normalizeSpacesStatic(output);
+  }
 }
 
 class VoiceAlarmService {
-  VoiceAlarmService({SpeechToText? speech})
-    : _speech = speech ?? SpeechToText();
+  VoiceAlarmService({SpeechToText? speech, http.Client? httpClient})
+    : _speech = speech ?? SpeechToText(),
+      _httpClient = httpClient ?? http.Client();
 
   final SpeechToText _speech;
+  final http.Client _httpClient;
   static const Duration defaultListenFor = Duration(seconds: 12);
   static const Duration defaultPauseFor = Duration(milliseconds: 2800);
+  static const Duration _parseTimeout = Duration(seconds: 15);
   static const List<String> _supportedLocales = ['en_GB', 'es_ES'];
   static const Duration _finalResultGrace = Duration(milliseconds: 700);
   static const Duration _silentFinishGrace = Duration(milliseconds: 250);
@@ -135,6 +285,45 @@ class VoiceAlarmService {
     if (_speech.isListening) {
       await _speech.cancel();
     }
+  }
+
+  Future<VoiceAlarmDraft> parseAlarmDraftWithAi(String transcript) async {
+    final trimmed = transcript.trim();
+    if (trimmed.isEmpty) {
+      throw const VoiceAlarmParseException('Voice transcript is empty.');
+    }
+
+    final uri = _buildBackendUri('/api/parse-voice-alarm');
+    http.Response response;
+    try {
+      response = await _httpClient
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'transcript': trimmed}),
+          )
+          .timeout(_parseTimeout);
+    } catch (_) {
+      throw const VoiceAlarmParseException(
+        'Voice parser is unavailable. Review the fields manually.',
+      );
+    }
+
+    final decoded = _decodeJsonObject(response.body);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw VoiceAlarmParseException(
+        _extractBackendError(decoded) ??
+            'Voice parser failed. Review the fields manually.',
+      );
+    }
+
+    if (decoded == null) {
+      throw const VoiceAlarmParseException(
+        'Voice parser returned malformed data. Review the fields manually.',
+      );
+    }
+
+    return VoiceAlarmDraft.fromJson(decoded, transcript: trimmed);
   }
 
   VoiceAlarmDraft parseAlarmDraft(String transcript) {
@@ -316,8 +505,10 @@ class VoiceAlarmService {
     return VoiceAlarmDraft(
       alarmName: alarmName,
       location: location,
+      geocodingQuery: location,
       radiusMeters: radius,
       transcript: cleanedTranscript,
+      confidence: 'low',
     );
   }
 
@@ -371,6 +562,40 @@ class VoiceAlarmService {
     throw const VoiceCaptureException(
       'Voice input supports only UK English and Spain Spanish on this device.',
     );
+  }
+
+  Uri _buildBackendUri(String path) {
+    final baseUrl = AppConfig.apiBaseUrl.trim();
+    if (baseUrl.isEmpty) {
+      throw const VoiceAlarmParseException(
+        'Voice parser backend is not configured.',
+      );
+    }
+
+    final normalizedBase = baseUrl.endsWith('/')
+        ? baseUrl.substring(0, baseUrl.length - 1)
+        : baseUrl;
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse('$normalizedBase$normalizedPath');
+  }
+
+  Map<String, dynamic>? _decodeJsonObject(String rawBody) {
+    if (rawBody.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(rawBody);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String? _extractBackendError(Map<String, dynamic>? payload) {
+    if (payload == null) return null;
+    final error = payload['error'];
+    if (error is String && error.trim().isNotEmpty) {
+      return error.trim();
+    }
+    return null;
   }
 
   void _handleSpeechStatus(String status) {
