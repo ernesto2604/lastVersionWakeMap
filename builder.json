@@ -9,6 +9,7 @@
     "path": "ios"
   },
   "flutter": {
+    "version": "3.41.1",
     "watch": {}
   },
   "reactNative": {},
