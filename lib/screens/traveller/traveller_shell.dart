@@ -26,6 +26,7 @@ class _TravellerShellState extends State<TravellerShell> {
   late final AppStateProvider _appState;
   final VoiceAlarmService _voiceAlarmService = VoiceAlarmService();
   bool _isCapturingVoice = false;
+  bool _isParsingVoice = false;
   String _liveTranscript = '';
 
   /// Tabs initialized on demand. Guide tab (1) may be initialized
@@ -62,10 +63,11 @@ class _TravellerShellState extends State<TravellerShell> {
   }
 
   Future<void> _onVoiceAlarmPressed() async {
-    if (_isCapturingVoice) return;
+    if (_isCapturingVoice || _isParsingVoice) return;
 
     setState(() {
       _isCapturingVoice = true;
+      _isParsingVoice = false;
       _liveTranscript = '';
     });
 
@@ -85,8 +87,23 @@ class _TravellerShellState extends State<TravellerShell> {
         return;
       }
 
-      // Parse the transcript into a draft and open the form for user review
-      final draft = _voiceAlarmService.parseAlarmDraft(transcript);
+      setState(() {
+        _isCapturingVoice = false;
+        _isParsingVoice = true;
+        _liveTranscript = transcript.trim();
+      });
+
+      VoiceAlarmDraft draft;
+      try {
+        draft = await _voiceAlarmService.parseAlarmDraftWithAi(transcript);
+      } on VoiceAlarmParseException catch (e) {
+        draft = _voiceAlarmService.parseAlarmDraft(transcript);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
+      }
+
       if (!mounted) return;
       showCreateAlarmBottomSheet(context, initialDraft: draft);
     } on VoiceCaptureException catch (e) {
@@ -102,9 +119,10 @@ class _TravellerShellState extends State<TravellerShell> {
         ),
       );
     } finally {
-      if (mounted && _isCapturingVoice) {
+      if (mounted && (_isCapturingVoice || _isParsingVoice)) {
         setState(() {
           _isCapturingVoice = false;
+          _isParsingVoice = false;
           _liveTranscript = '';
         });
       }
@@ -181,11 +199,15 @@ class _TravellerShellState extends State<TravellerShell> {
             currentIndex: tabIndex,
             onTap: (i) => _appState.setTravellerTab(i),
             onExtraButtonTap: tabIndex == 0 ? _onVoiceAlarmPressed : null,
-            extraButtonIcon: _isCapturingVoice
+            extraButtonIcon: _isCapturingVoice || _isParsingVoice
                 ? CupertinoIcons.mic_fill
                 : CupertinoIcons.mic,
-            extraButtonLabel: _isCapturingVoice ? 'Listening' : 'Voice',
-            extraButtonIconColor: _isCapturingVoice
+            extraButtonLabel: _isParsingVoice
+                ? 'Parsing'
+                : _isCapturingVoice
+                ? 'Listening'
+                : 'Voice',
+            extraButtonIconColor: _isCapturingVoice || _isParsingVoice
                 ? CupertinoColors.systemRed
                 : null,
             items: const [
