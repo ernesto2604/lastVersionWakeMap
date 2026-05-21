@@ -10,6 +10,7 @@ import '../../providers/app_state_provider.dart';
 import '../../services/places_service.dart';
 import '../../services/voice_alarm_service.dart';
 import '../../widgets/map/map_wrapper.dart';
+import '../../config/map_tile_config.dart';
 
 Future<void> showCreateAlarmBottomSheet(
   BuildContext context, {
@@ -631,20 +632,10 @@ class _CreateAlarmScreenState extends State<CreateAlarmScreen> {
                           onTap: (_, point) => _onMapTap(point),
                         ),
                         children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.wakemap.wakeMap',
-                          ),
+                          MapTileConfig.tileLayer(),
                           CircleLayer(circles: _buildCircles()),
                           MarkerLayer(markers: _buildMarkers()),
-                          const RichAttributionWidget(
-                            attributions: [
-                              TextSourceAttribution(
-                                'OpenStreetMap contributors',
-                              ),
-                            ],
-                          ),
+                          MapTileConfig.attributionWidget(),
                         ],
                       ),
                       if (_loadingLocation)

@@ -11,6 +11,7 @@ import '../../services/location_service.dart';
 import '../../services/route_service.dart';
 import '../../widgets/map/map_wrapper.dart';
 import '../shared/settings_screen.dart';
+import '../../config/map_tile_config.dart';
 
 class TravellerMapScreen extends StatefulWidget {
   const TravellerMapScreen({super.key});
@@ -489,19 +490,11 @@ class _TravellerMapScreenState extends State<TravellerMapScreen> {
                       },
                     ),
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.wakemap.wakeMap',
-                      ),
+                      MapTileConfig.tileLayer(),
                       CircleLayer(circles: _buildCircles(appState)),
                       PolylineLayer(polylines: _buildPolylines(appState)),
                       MarkerLayer(markers: _buildMarkers(appState)),
-                      const RichAttributionWidget(
-                        attributions: [
-                          TextSourceAttribution('OpenStreetMap contributors'),
-                        ],
-                      ),
+                      MapTileConfig.attributionWidget(),
                     ],
                   ),
                 ),

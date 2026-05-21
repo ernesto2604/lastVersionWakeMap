@@ -485,7 +485,7 @@ Use this exact schema:
 Rules:
 - 2 to 4 stops
 - concise UI-friendly descriptions
-- ensure the revised plan remains coherent as one consistent plan
+- You may add, remove, or change stops as needed. You can also completely redo the plan if it improves the user experience.
 
 Request type: refine_plan
 Request context JSON:

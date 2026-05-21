@@ -11,6 +11,8 @@ import '../../services/location_service.dart';
 import '../../services/route_service.dart';
 import '../../widgets/map/map_wrapper.dart';
 import '../shared/settings_screen.dart';
+import '../../config/map_tile_config.dart';
+
 
 class CommuterMapScreen extends StatefulWidget {
   const CommuterMapScreen({super.key});
@@ -445,19 +447,11 @@ class _CommuterMapScreenState extends State<CommuterMapScreen> {
                       },
                     ),
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.wakemap.wakeMap',
-                      ),
+                      MapTileConfig.tileLayer(),
                       CircleLayer(circles: _buildCircles(appState)),
                       PolylineLayer(polylines: _buildPolylines()),
                       MarkerLayer(markers: _buildMarkers(appState)),
-                      const RichAttributionWidget(
-                        attributions: [
-                          TextSourceAttribution('OpenStreetMap contributors'),
-                        ],
-                      ),
+                      MapTileConfig.attributionWidget(),
                     ],
                   ),
                 ),

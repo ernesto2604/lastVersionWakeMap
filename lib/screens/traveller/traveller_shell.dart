@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../../widgets/navigation/premium_bottom_nav_bar.dart';
 import '../../providers/app_state_provider.dart';
 import '../../app/routes.dart';
-import '../../services/places_service.dart';
 import '../../services/voice_alarm_service.dart';
+import '../shared/create_alarm_screen.dart';
 import 'traveller_map_screen.dart';
 import 'traveller_guide_screen.dart';
 import 'traveller_alarms_screen.dart';
@@ -23,7 +23,6 @@ class TravellerShell extends StatefulWidget {
 class _TravellerShellState extends State<TravellerShell> {
   late final AppStateProvider _appState;
   final VoiceAlarmService _voiceAlarmService = VoiceAlarmService();
-  final PlacesService _placesService = PlacesService();
   bool _isCapturingVoice = false;
   String _liveTranscript = '';
 
@@ -83,50 +82,10 @@ class _TravellerShellState extends State<TravellerShell> {
         return;
       }
 
+      // Parse the transcript into a draft and open the form for user review
       final draft = _voiceAlarmService.parseAlarmDraft(transcript);
-
-      final sessionToken = DateTime.now().microsecondsSinceEpoch.toString();
-      final suggestions = await _placesService.autocomplete(
-        query: draft.location,
-        sessionToken: sessionToken,
-      );
-
       if (!mounted) return;
-
-      if (suggestions.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not resolve location: ${draft.location}')),
-        );
-        return;
-      }
-
-      final best = suggestions.first;
-      final coordinates = await _placesService.getPlaceCoordinates(
-        placeId: best.placeId,
-        sessionToken: sessionToken,
-      );
-
-      if (!mounted) return;
-
-      if (coordinates == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not fetch map coordinates for ${best.description}')),
-        );
-        return;
-      }
-
-      await _appState.createAlarm(
-        name: draft.alarmName,
-        locationLabel: best.description,
-        latitude: coordinates.latitude,
-        longitude: coordinates.longitude,
-        radiusMeters: 100,
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Alarm created: ${draft.alarmName} (100 m)')),
-      );
+      showCreateAlarmBottomSheet(context, initialDraft: draft);
     } on VoiceCaptureException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

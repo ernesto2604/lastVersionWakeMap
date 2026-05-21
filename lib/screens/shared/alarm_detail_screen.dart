@@ -13,6 +13,7 @@ import '../../models/alarm_model.dart';
 import '../../providers/app_state_provider.dart';
 import '../../services/places_service.dart';
 import '../../widgets/map/map_wrapper.dart';
+import '../../config/map_tile_config.dart';
 
 Future<void> showAlarmDetailBottomSheet(
   BuildContext context,
@@ -540,11 +541,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
                       },
                     ),
                     children: [
-                      TileLayer(
-                        urlTemplate:
-                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                        userAgentPackageName: 'com.wakemap.wakeMap',
-                      ),
+                      MapTileConfig.tileLayer(),
                       CircleLayer(
                         circles: [
                           CircleMarker(
@@ -573,11 +570,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
                           ),
                         ],
                       ),
-                      const RichAttributionWidget(
-                        attributions: [
-                          TextSourceAttribution('OpenStreetMap contributors'),
-                        ],
-                      ),
+                      MapTileConfig.attributionWidget(),
                     ],
                   ),
                 ),

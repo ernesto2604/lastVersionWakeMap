@@ -630,10 +630,46 @@ class AppStateProvider extends ChangeNotifier {
       'move more things into day',
       'add more',
       'remove',
+      'add',
+      'delete',
+      'insert',
+      'replace',
+      'eliminate',
+      'include',
+      'exclude',
+      'stop',
+      'museum',
+      'restaurant',
+      'activity',
+      'point of interest',
+      'extra stop',
+      'add stop',
+      'remove stop',
+      'add a stop',
+      'remove a stop',
+      'añadir',
+      'quitar',
+      'parada',
+      'modificar',
+      'eliminar',
+      'incluir',
+      'excluir',
+      'restaurante',
+      'museo',
+      'actividad',
+      'punto de interés',
+      'parada extra',
     ];
 
+    // Si el mensaje contiene una instrucción clara de acción sobre el plan, forzar refinamiento
+    const actionVerbs = [
+      'add', 'remove', 'delete', 'insert', 'replace', 'eliminate', 'include', 'exclude',
+      'añadir', 'quitar', 'modificar', 'eliminar', 'incluir', 'excluir',
+    ];
+    final containsAction = actionVerbs.any((v) => msg.contains(v));
+
     final asksGeneration = generationPhrases.any(msg.contains);
-    final asksRefinement = refinementHints.any(msg.contains);
+    final asksRefinement = refinementHints.any(msg.contains) || containsAction;
 
     if (!hasPlan) {
       if (asksGeneration) {

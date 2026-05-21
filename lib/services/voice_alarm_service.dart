@@ -100,21 +100,85 @@ class VoiceAlarmService {
 
   VoiceAlarmDraft parseAlarmDraft(String transcript) {
     final cleanedTranscript = _normalizeSpaces(transcript);
-    final lower = cleanedTranscript.toLowerCase();
 
+    // --- 1. Extract radius (e.g. "300 metres", "radius of 200", "within 500 m") ---
+    double radius = 300; // sensible default (midpoint of 100–1000 slider)
+    String working = cleanedTranscript;
+
+    final radiusPatterns = <RegExp>[
+      // "radius of 300 metres" / "radius of 300"
+      RegExp(r'(?:with\s+)?(?:a\s+)?radius\s+of\s+(\d+)\s*(?:met(?:re|er)s?|m\b)?', caseSensitive: false),
+      // "300 metre radius" / "300 m radius"
+      RegExp(r'(\d+)\s*(?:met(?:re|er)s?|m)\s+radius', caseSensitive: false),
+      // "at 500 metres" / "at 500 m" (end of sentence)
+      RegExp(r'\bat\s+(\d+)\s*(?:met(?:re|er)s?|m)\s*$', caseSensitive: false),
+      // "within 400 metres"
+      RegExp(r'within\s+(\d+)\s*(?:met(?:re|er)s?|m\b)?', caseSensitive: false),
+      // standalone "300 metres" / "300 m" not already matched
+      RegExp(r'(\d+)\s*(?:met(?:re|er)s?|m)\b', caseSensitive: false),
+    ];
+
+    for (final pattern in radiusPatterns) {
+      final match = pattern.firstMatch(working);
+      if (match != null) {
+        final parsed = double.tryParse(match.group(1) ?? '');
+        if (parsed != null && parsed > 0) {
+          radius = parsed.clamp(100, 1000);
+          // Remove the matched radius phrase from the working text
+          working = working.replaceFirst(match.group(0)!, '').trim();
+          working = _normalizeSpaces(working);
+        }
+        break;
+      }
+    }
+
+    // --- 2. Extract explicit alarm name ("called X", "named X") ---
+    String? explicitName;
+    final namePatterns = <RegExp>[
+      // "called University for ..." — name is between "called" and "for"
+      RegExp(r'\bcalled\s+(.+?)\s+for\s+', caseSensitive: false),
+      // "named University for ..."
+      RegExp(r'\bnamed\s+(.+?)\s+for\s+', caseSensitive: false),
+      // "called University" at end
+      RegExp(r'\bcalled\s+(.+)', caseSensitive: false),
+      // "named University" at end
+      RegExp(r'\bnamed\s+(.+)', caseSensitive: false),
+    ];
+
+    for (final pattern in namePatterns) {
+      final match = pattern.firstMatch(working);
+      if (match != null) {
+        final candidate = (match.group(1) ?? '').trim();
+        if (candidate.isNotEmpty) {
+          explicitName = _toTitleCase(_cleanLocation(candidate));
+          // Remove the "called/named X" fragment so it doesn't pollute location
+          working = working.replaceFirst(match.group(0)!, '').trim();
+          working = _normalizeSpaces(working);
+          // If we matched "called X for ..." we removed "for" too, re-add context
+          if (pattern.pattern.contains(r'for\s+')) {
+            // The text after "for" is still in working — nothing to restore
+          }
+        }
+        break;
+      }
+    }
+
+    // --- 3. Extract location from remaining text ---
     String location = '';
-    final patterns = <RegExp>[
+    final locationPatterns = <RegExp>[
       RegExp(r'when\s+i\s+arrive\s+(?:to|at|in)\s+(.+)', caseSensitive: false),
       RegExp(r'when\s+i\s+get\s+to\s+(.+)', caseSensitive: false),
       RegExp(r'when\s+i\s+reach\s+(.+)', caseSensitive: false),
       RegExp(r'(?:arrive|reach|get)\s+(?:to|at|in)\s+(.+)', caseSensitive: false),
+      RegExp(r'\bnear\s+(.+)', caseSensitive: false),
+      RegExp(r'\bfor\s+(.+)', caseSensitive: false),
       RegExp(r'\bto\s+(.+)', caseSensitive: false),
       RegExp(r'\bat\s+(.+)', caseSensitive: false),
       RegExp(r'\bin\s+(.+)', caseSensitive: false),
     ];
 
-    for (final pattern in patterns) {
-      final match = pattern.firstMatch(cleanedTranscript);
+    for (final pattern in locationPatterns) {
+      final match = pattern.firstMatch(working);
       if (match != null && match.groupCount >= 1) {
         location = (match.group(1) ?? '').trim();
         if (location.isNotEmpty) break;
@@ -122,18 +186,22 @@ class VoiceAlarmService {
     }
 
     if (location.isEmpty) {
-      location = cleanedTranscript
-          .replaceFirst(RegExp(r'^put\s+an\s+alarm\s*', caseSensitive: false), '')
-          .replaceFirst(RegExp(r'^set\s+an\s+alarm\s*', caseSensitive: false), '')
-          .replaceFirst(RegExp(r'^create\s+an\s+alarm\s*', caseSensitive: false), '')
+      location = working
+          .replaceFirst(RegExp(r'^(?:put|set|create)\s+(?:an?\s+)?alarm\s*', caseSensitive: false), '')
+          .replaceFirst(RegExp(r'^(?:wake\s+me)\s*', caseSensitive: false), '')
           .trim();
     }
 
     location = _cleanLocation(location);
 
+    // --- 4. Determine alarm name ---
     String alarmName;
-    if (location.isEmpty) {
-      alarmName = lower.contains('home') ? 'Home Alarm' : 'Voice Alarm';
+    if (explicitName != null && explicitName.isNotEmpty) {
+      alarmName = explicitName;
+    } else if (location.isEmpty) {
+      alarmName = cleanedTranscript.toLowerCase().contains('home')
+          ? 'Home Alarm'
+          : 'Voice Alarm';
       location = cleanedTranscript;
     } else {
       final firstChunk = location.split(',').first.trim();
@@ -143,7 +211,7 @@ class VoiceAlarmService {
     return VoiceAlarmDraft(
       alarmName: alarmName,
       location: location,
-      radiusMeters: 100,
+      radiusMeters: radius,
       transcript: cleanedTranscript,
     );
   }
